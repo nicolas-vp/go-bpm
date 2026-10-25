@@ -10,6 +10,8 @@ type ScriptTask struct {
 	IncomingList         []Incoming          `xml:"incoming"`
 	OutgoingList         []Outgoing          `xml:"outgoing"`
 	ExtensionElementList []ExtensionElements `xml:"extensionElements"`
+	// Other - остальные дочерние элементы: по ним находится маркер цикла (multi-instance)
+	Other []Element `xml:",any"`
 }
 
 // GetScript возвращает zeebe:script задачи; пустой, если скрипт не задан

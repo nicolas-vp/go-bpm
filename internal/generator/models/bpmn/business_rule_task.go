@@ -11,6 +11,8 @@ type BusinessRuleTask struct {
 	IncomingList         []Incoming          `xml:"incoming"`
 	OutgoingList         []Outgoing          `xml:"outgoing"`
 	ExtensionElementList []ExtensionElements `xml:"extensionElements"`
+	// Other - остальные дочерние элементы: по ним находится маркер цикла (multi-instance)
+	Other []Element `xml:",any"`
 }
 
 // CalledDecision - решение, которое вызывает задача бизнес-правила

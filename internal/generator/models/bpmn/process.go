@@ -12,6 +12,8 @@ type Process struct {
 	CallActivityList  []CallActivity     `xml:"callActivity"`
 	SequenceFlowList  []SequenceFlow     `xml:"sequenceFlow"`
 	SubProcessList    []Process          `xml:"subProcess"`
+	// IncomingList и OutgoingList - переходы встроенного подпроцесса как элемента родителя
+	IncomingList      []Incoming         `xml:"incoming"`
 	OutgoingList      []Outgoing         `xml:"outgoing"`
 	Tasks             []Task             `xml:"task"`
 	ScriptTasks       []ScriptTask       `xml:"scriptTask"`
@@ -20,6 +22,9 @@ type Process struct {
 	BoundaryEvents    []BoundaryEvent    `xml:"boundaryEvent"`
 	// IntermediateCatchEvents - промежуточные события ожидания, поддерживается таймер
 	IntermediateCatchEvents []IntermediateCatchEvent `xml:"intermediateCatchEvent"`
+	// Other - элементы, которые генератор не поддерживает (inclusive gateway, manual task и т.п.), и служебные
+	// (документация, лейны, аннотации); первые - ошибка генерации
+	Other []Element `xml:",any"`
 }
 
 // GetMethodTasks возвращает задачи процесса и всех его подпроцессов, для которых генерируются методы

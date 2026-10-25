@@ -328,6 +328,9 @@ func TestBusinessRuleTask(t *testing.T) {
       <bpmn:extensionElements>` + extension + `</bpmn:extensionElements>
       <bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing>
     </bpmn:businessRuleTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="rule" />
+    <bpmn:sequenceFlow id="f2" sourceRef="rule" targetRef="end" />
   </bpmn:process>
 </bpmn:definitions>`
 	}

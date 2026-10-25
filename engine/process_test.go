@@ -33,6 +33,17 @@ func (q *fakeQueue) Push(_ context.Context, task queue.Task, _ ...queue.PushOpti
 	return nil
 }
 
+// InTx вызывает fn с транзакцией, которая принимает любые запросы: экземпляр, который пишет StartProcess
+func (q *fakeQueue) InTx(_ context.Context, fn func(tx queue.Tx) error) error {
+	return fn(fakeExecTx{})
+}
+
+type fakeExecTx struct{ queue.Tx }
+
+func (fakeExecTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
 func (q *fakeQueue) PushTx(ctx context.Context, _ queue.Tx, task queue.Task, opts ...queue.PushOption) error {
 	return q.Push(ctx, task, opts...)
 }

@@ -31,7 +31,8 @@ var ErrProcessNotFound = errors.New("process not found")
 // Queue - то, что движку нужно от очереди; *queue.Queue подходит
 type Queue interface {
 	Register(kind string, handler queue.Handler, opts queue.KindOptions)
-	Push(ctx context.Context, task queue.Task, opts ...queue.PushOption) error
+	// InTx выполняет fn в транзакции: в ней StartProcess пишет экземпляр и ставит задачу старта
+	InTx(ctx context.Context, fn func(tx queue.Tx) error) error
 	PushTx(ctx context.Context, tx queue.Tx, task queue.Task, opts ...queue.PushOption) error
 	// CancelByKeyTx отменяет задачу, которая ещё не завершена: прерванная задача и таймеры
 	CancelByKeyTx(ctx context.Context, tx queue.Tx, kind, key string) error
@@ -180,8 +181,25 @@ func ApplyStartOptions(opts ...StartOption) StartOptions {
 	return options
 }
 
-// StartProcess запускает экземпляр процесса processName с переменными variables и возвращает его id
+// StartProcess запускает экземпляр процесса processName с переменными variables и возвращает его id.
+// Процесс выполняется асинхронно воркерами очереди; экземпляр виден в bpm_process_instance (при History.ToDB)
+// сразу, со статусом running, даже если упадёт первый шаг
 func (s *Engine) StartProcess(ctx context.Context, processName string, variables map[string]any, opts ...StartOption) (uuid.UUID, error) {
+	var instanceUid uuid.UUID
+	err := s.queue.InTx(ctx, func(tx queue.Tx) error {
+		var err error
+		instanceUid, err = s.StartProcessTx(ctx, tx, processName, variables, opts...)
+		return err
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return instanceUid, nil
+}
+
+// StartProcessTx запускает экземпляр процесса в транзакции tx сервиса: процесс начнётся, только если tx
+// закоммитится, - например, вместе с заказом, который он обрабатывает. tx - pgx.Tx той же базы, что у очереди
+func (s *Engine) StartProcessTx(ctx context.Context, tx queue.Tx, processName string, variables map[string]any, opts ...StartOption) (uuid.UUID, error) {
 	process, err := s.getProcess(processName)
 	if err != nil {
 		return uuid.Nil, err
@@ -204,7 +222,11 @@ func (s *Engine) StartProcess(ctx context.Context, processName string, variables
 		return uuid.Nil, err
 	}
 
-	err = s.queue.Push(ctx, queue.Task{Kind: s.systemKind, Payload: payload, Key: instanceUid.String()})
+	// шаг старта вставит строку ещё раз и пропустит её (on conflict do nothing)
+	if err := s.startInstance(ctx, tx, message); err != nil {
+		return uuid.Nil, err
+	}
+	err = s.queue.PushTx(ctx, tx, queue.Task{Kind: s.systemKind, Payload: payload, Key: instanceUid.String()})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("push start task: %w", err)
 	}

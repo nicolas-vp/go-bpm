@@ -7,4 +7,6 @@ type EndEvent struct {
 	Name         string     `xml:"name,attr"`
 	Id           string     `xml:"id,attr"`
 	IncomingList []Incoming `xml:"incoming"`
+	// OtherDefinitions - terminate, error и прочие определения: поддерживается только обычный конец
+	OtherDefinitions []EventDefinition `xml:",any"`
 }

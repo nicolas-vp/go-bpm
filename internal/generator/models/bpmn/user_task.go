@@ -17,6 +17,8 @@ type UserTask struct {
 	IncomingList         []Incoming          `xml:"incoming"`
 	OutgoingList         []Outgoing          `xml:"outgoing"`
 	ExtensionElementList []ExtensionElements `xml:"extensionElements"`
+	// Other - остальные дочерние элементы: по ним находится маркер цикла (multi-instance)
+	Other []Element `xml:",any"`
 }
 
 // AssignmentDefinition - zeebe:assignmentDefinition задачи пользователя

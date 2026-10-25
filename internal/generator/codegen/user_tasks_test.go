@@ -15,6 +15,8 @@ func userTaskDefinitions(task string) string {
     <bpmn:startEvent id="start"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
     ` + task + `
     <bpmn:endEvent id="end"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="approve" />
+    <bpmn:sequenceFlow id="f2" sourceRef="approve" targetRef="end" />
   </bpmn:process>
 </bpmn:definitions>`
 }

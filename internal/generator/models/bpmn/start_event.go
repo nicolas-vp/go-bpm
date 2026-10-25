@@ -8,4 +8,6 @@ type StartEvent struct {
 	Id           string     `xml:"id,attr"`
 	Default      string     `xml:"default,attr"`
 	OutgoingList []Outgoing `xml:"outgoing"`
+	// OtherDefinitions - таймер, сообщение и прочие определения: поддерживается только обычный старт
+	OtherDefinitions []EventDefinition `xml:",any"`
 }

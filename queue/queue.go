@@ -169,6 +169,14 @@ func (q *Queue) Push(ctx context.Context, task Task, opts ...PushOption) error {
 	})
 }
 
+// InTx выполняет fn в транзакции пула очереди: задачи, поставленные в ней через PushTx, появятся вместе
+// с остальными изменениями fn, только если она закоммитится
+func (q *Queue) InTx(ctx context.Context, fn func(tx Tx) error) error {
+	return pgx.BeginFunc(ctx, q.pool, func(tx pgx.Tx) error {
+		return fn(tx)
+	})
+}
+
 // PushTx ставит задачу в транзакции tx: задача появится, только если tx закоммитится
 func (q *Queue) PushTx(ctx context.Context, tx Tx, task Task, opts ...PushOption) error {
 	var o pushOptions

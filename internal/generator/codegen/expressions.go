@@ -13,6 +13,9 @@ import (
 
 // ParseFromProcess - получить выражения из процесса. errorCodes - коды bpmn:error по id из definitions
 func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes map[string]string) (map[string]*model.Expression, error) {
+	if err := prepareProcess(process); err != nil {
+		return nil, err
+	}
 	expressions := make(map[string]*model.Expression)
 	for _, task := range process.ServiceTasks {
 		expressions[task.Id] = CreateExpressionFromServiceTask(&task, process)
@@ -273,16 +276,12 @@ func CreateExpressionFromExclusiveGateway(gateway *bpmn.ExclusiveGateway, proces
 
 func CreateExpressionFromParallelGateway(gateway *bpmn.ParallelGateway, process *bpmn.Process) *model.Expression {
 	length := len(gateway.IncomingList)
-	var isParallel bool
-	var activateType bpm.ActivateType
+	activateType := bpm.ActivateTypeFlow
 	if length > 1 {
-		isParallel = false
 		activateType = bpm.ActivateTypeSyncQueue
-	} else {
-		isParallel = true
-		activateType = bpm.ActivateTypeFlow
 	}
-	completeType, outgoings, condition := MapOutgoings(&gateway.OutgoingList, "", process, isParallel)
+	// токен уходит во все исходящие ветки, в том числе после слияния: шлюз может и сливать, и разветвлять
+	completeType, outgoings, condition := MapOutgoings(&gateway.OutgoingList, "", process, true)
 	return &model.Expression{
 		ElementId:            gateway.Id,
 		ActivateType:         activateType,

@@ -36,6 +36,13 @@ const eventsDefinitions = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec
       <bpmn:outgoing>f6</bpmn:outgoing>
       <bpmn:errorEventDefinition />
     </bpmn:boundaryEvent>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="wait" />
+    <bpmn:sequenceFlow id="f2" sourceRef="wait" targetRef="charge" />
+    <bpmn:sequenceFlow id="f3" sourceRef="charge" targetRef="end" />
+    <bpmn:sequenceFlow id="f4" sourceRef="timeout" targetRef="end" />
+    <bpmn:sequenceFlow id="f5" sourceRef="declined" targetRef="end" />
+    <bpmn:sequenceFlow id="f6" sourceRef="anyError" targetRef="end" />
   </bpmn:process>
   <bpmn:error id="Error_declined" name="Declined" errorCode="DECLINED" />
 </bpmn:definitions>`

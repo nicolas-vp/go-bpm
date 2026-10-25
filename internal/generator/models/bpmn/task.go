@@ -7,4 +7,6 @@ type Task struct {
 	Default      string     `xml:"default,attr"`
 	IncomingList []Incoming `xml:"incoming"`
 	OutgoingList []Outgoing `xml:"outgoing"`
+	// Other - остальные дочерние элементы: по ним находится маркер цикла (multi-instance)
+	Other []Element `xml:",any"`
 }

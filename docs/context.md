@@ -93,6 +93,19 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - **Обработчики пишутся руками.** Генератор только создаёт недостающие заглушки; обработчики jobType, которого больше нет в BPMN, не удаляются.
 - Миграция со старых раскладок pg-bpm-gen (`conditions/`, `methods/`, `handler_<jobType>.go`, `deployment-gen.go`) удалена вместе с `legacy.go`: в новом продукте таких проектов нет.
 
+### Проверка процесса (`codegen/validate.go`)
+
+`prepareProcess` в начале `ParseFromProcess`: всё, что раньше генерировалось молча и роняло экземпляр в рантайме, когда до этого доходил токен, — ошибка генерации.
+
+- **Неизвестные элементы.** У `bpmn.Process` (он же встроенный подпроцесс) поле `Other []Element xml:",any"` ловит всё, что не разобрано отдельно. Пропускаются только неисполняемые (`ignoredElements`: документация, `extensionElements`, лейны, аннотации, ассоциации, группы, объекты данных), остальное (inclusive/event-based/complex gateway, manual/send/receive task, throw events, transaction, ad-hoc) — ошибка. Раньше такой элемент не попадал во flow, а переход в него оставался: `element not found` в рантайме.
+- **Определения событий** у start и end event (`OtherDefinitions`): таймер, сообщение, terminate, error — ошибка; раньше исполнялись как обычные. Ровно один start event у процесса и подпроцесса (раньше `GetStartingElement` брал первый или паниковал).
+- **Циклы** (`multiInstanceLoopCharacteristics`, `standardLoopCharacteristics`) у задач, callActivity и подпроцесса — ошибка; раньше задача выполнялась один раз. Для этого у задач `Other []Element xml:",any"`.
+- **Вложенный подпроцесс** — ошибка: `GenerateQueue` разворачивает только один уровень `SubProcessList`, внутренний не генерировался.
+- **Переходы** (`linkFlows`): пустые `<bpmn:incoming>`/`<bpmn:outgoing>` заполняются по `sourceRef`/`targetRef` sequence flow в порядке файла (раньше BPMN, написанный руками, генерировался без переходов). Заданные должны совпадать с sequence flow как множество, порядок берётся из элемента — по нему проверяются условия шлюза, поэтому сгенерированный код моделерных файлов не меняется. Sequence flow к несуществующему элементу — ошибка.
+- **Ветвления** (`checkBranches`): `MapOutgoings` превращал несколько выходов любого элемента в выбор по условиям — у задачи с двумя переходами без условий шаг падал. Теперь: несколько выходов — только у шлюзов, подпроцесса и callActivity (у двух последних — разветвление, как раньше); условие на переходе — только из exclusive gateway; у exclusive gateway каждый выход с условием или default, default должен выходить из шлюза.
+- **Parallel gateway**, который и сливает, и разветвляет, теперь `SyncQueue` с `Straight` во все выходы; раньше уходил в выбор по условиям без условий.
+- Проверено, что все пять демо-процессов проходят без изменений сгенерированного кода; тесты — `validate_test.go`.
+
 ### Что из BPMN во что превращается
 
 | Элемент BPMN | ActivateType | Что генерируется |
@@ -182,7 +195,8 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 
 ## Движок (`engine`)
 
-- **Вход:** `engine.New(queue, engine.Config{...}, bpmgen.Processes(svc), bpmgen.Queues(svc))` до `queue.Start`. `StartProcess(ctx, name, variables map[string]any, opts ...StartOption) (uuid.UUID, error)`, опция `engine.WithBusinessKey(key)`; неизвестный процесс — `engine.ErrProcessNotFound`. Id экземпляров — UUID v7. Опции пишут в экспортированную `StartOptions` (`ApplyStartOptions`), чтобы их мог разобрать фейк движка в тестах `httpapi`.
+- **Вход:** `engine.New(queue, engine.Config{...}, bpmgen.Processes(svc), bpmgen.Queues(svc))` до `queue.Start`. `StartProcess(ctx, name, variables map[string]any, opts ...StartOption) (uuid.UUID, error)`, опция `engine.WithBusinessKey(key)`; неизвестный процесс — `engine.ErrProcessNotFound`.
+  - `StartProcessTx(ctx, tx, ...)` — старт в транзакции сервиса (процесс атомарно с его данными); `StartProcess` — он же в `Queue.InTx` (новый метод очереди, транзакция на её пуле, заменил `Push` в интерфейсе `engine.Queue`). В той же tx пишется строка экземпляра (`startInstance`), поэтому экземпляр виден со статусом `running` сразу. Раньше строку писал только шаг старта, и экземпляр с упавшим первым шагом не был виден, пока не кончатся попытки (около шести минут). Шаг старта вставляет строку ещё раз — `on conflict do nothing`. Id экземпляров — UUID v7. Опции пишут в экспортированную `StartOptions` (`ApplyStartOptions`), чтобы их мог разобрать фейк движка в тестах `httpapi`.
   - Flow всех процессов сливаются в одну map; дубликат id flow — ошибка.
   - Очереди уже объединены генератором; повтор `TypeID` в `Queues` — ошибка (`sortedQueues`).
 - **Виды задач** — строки: системная очередь `<KindPrefix>.system` (старты, шаги, таймеры), service task — `<KindPrefix>.task.<jobType>`. `KindPrefix` по умолчанию `bpm`; разные префиксы разводят по одной базе экземпляры с разным кодом процессов (раньше для этого собирали второй бинарник с другим `int16`-kind через `-overlay`).
@@ -211,7 +225,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
   - Переменные пишутся только для старта процесса (StartElement любого flow, в том числе встроенного подпроцесса и процесса callActivity) и задач: `Method`, `Queue`, `CallActivity`, а также граничных событий — там видны `errorCode` и `errorMessage` (`recordsVariables`). У остальных записей `variables` NULL, чтобы история не росла снимком на каждый sequence flow.
   - Вывод на экран при откате шага не отменяется, поэтому при повторе задачи строки могут задвоиться.
 - **Экземпляры** (`instances.go`, таблица `bpm_process_instance`): id, тип (`process_name` — id процесса в BPMN, у встроенного подпроцесса `<процесс>.<подпроцесс>`), `business_key`, `parent_instance_uid`, `status`, `created_at`, `updated_at`.
-  - Пишутся вместе с историей, только при `History.ToDB`, в tx шага. Строка появляется, когда токен входит в стартовое событие: корневой экземпляр (`startRoot`), встроенный подпроцесс и callActivity (`startChildProcess`), `StartNewProcess`. У экземпляров, начатых при выключенном `ToDB`, строки нет.
+  - Пишутся вместе с историей, только при `History.ToDB`, в tx шага. Корневой экземпляр — в tx `StartProcess`/`StartProcessTx` вместе с задачей старта (и ещё раз, без эффекта, в `startRoot`); встроенный подпроцесс и callActivity — когда токен входит в них (`startChildProcess`), `StartNewProcess`. У экземпляров, начатых при выключенном `ToDB`, строки нет.
   - Статусы: `running` → `completed` на End event экземпляра; `failed` — по `OnFailed` очереди: упал шаг системной очереди или service task. Падает экземпляр задачи и все его предки по `ParentProcess` (они ждут End, которого не будет); строка вставляется, если её нет (упал сам старт). `failed` не перезаписывается в `completed`: токенов движок не считает, поэтому до End могла дойти другая параллельная ветка — по той же причине несведённые параллельные ветки до разных End дают `completed` на первом.
   - `updated_at` обновляется с каждой записью истории (`touchInstanceQuery` в `writeHistoryDB`) и при смене статуса.
   - Бизнес-ключ — свободный текст из старта, наследуется дочерними экземплярами (в `instanceMessage.BusinessKey`) и передаётся обработчикам в `bpm.Job`. Индекса по нему нет.
