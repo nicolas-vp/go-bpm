@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    id="Definitions_SubProcess" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="SubProcess" isExecutable="true">
+    <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="sub" name="Проверка документов"><bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing>      <bpmn:startEvent id="a"><bpmn:outgoing>i1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:task id="b" name="Проверить"><bpmn:incoming>i1</bpmn:incoming><bpmn:outgoing>i2</bpmn:outgoing></bpmn:task>
+      <bpmn:task id="c" name="Сохранить"><bpmn:incoming>i2</bpmn:incoming><bpmn:outgoing>i3</bpmn:outgoing></bpmn:task>
+      <bpmn:endEvent id="e"><bpmn:incoming>i3</bpmn:incoming></bpmn:endEvent>
+</bpmn:subProcess>
+    <bpmn:callActivity id="call" name="Процесс KYC"><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f3</bpmn:outgoing></bpmn:callActivity>
+    <bpmn:endEvent id="end"><bpmn:incoming>f3</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="sub"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="i1" sourceRef="a" targetRef="b"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="i2" sourceRef="b" targetRef="c"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="i3" sourceRef="c" targetRef="e"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f2" sourceRef="sub" targetRef="call"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f3" sourceRef="call" targetRef="end"></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_SubProcess">
+    <bpmndi:BPMNPlane id="Plane_SubProcess" bpmnElement="SubProcess">
+      <bpmndi:BPMNShape id="s_di" bpmnElement="s"><dc:Bounds x="42" y="82" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_di" bpmnElement="sub" isExpanded="true"><dc:Bounds x="135" y="25" width="330" height="150" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="a_di" bpmnElement="a"><dc:Bounds x="147" y="92" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_di" bpmnElement="b"><dc:Bounds x="205" y="80" width="80" height="60" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="c_di" bpmnElement="c"><dc:Bounds x="315" y="80" width="80" height="60" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_di" bpmnElement="e"><dc:Bounds x="417" y="92" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_di" bpmnElement="call"><dc:Bounds x="540" y="60" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end"><dc:Bounds x="692" y="82" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="78" y="100" /><di:waypoint x="135" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="i1_di" bpmnElement="i1"><di:waypoint x="183" y="110" /><di:waypoint x="205" y="110" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="i2_di" bpmnElement="i2"><di:waypoint x="285" y="110" /><di:waypoint x="315" y="110" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="i3_di" bpmnElement="i3"><di:waypoint x="395" y="110" /><di:waypoint x="417" y="110" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="465" y="100" /><di:waypoint x="540" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="640" y="100" /><di:waypoint x="692" y="100" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

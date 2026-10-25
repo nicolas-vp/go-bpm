@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    id="Definitions_OrderApproval" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="OrderApproval" name="Согласование заказа" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:task id="CheckOrder" name="Проверить заказ"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing></bpmn:task>
+    <bpmn:exclusiveGateway id="IsBig" name="Крупный заказ?" default="Flow_small"><bpmn:incoming>Flow_2</bpmn:incoming><bpmn:outgoing>Flow_big</bpmn:outgoing><bpmn:outgoing>Flow_small</bpmn:outgoing></bpmn:exclusiveGateway>
+    <bpmn:userTask id="Approve" name="Согласовать заказ"><bpmn:incoming>Flow_big</bpmn:incoming><bpmn:outgoing>Flow_3</bpmn:outgoing></bpmn:userTask>
+    <bpmn:serviceTask id="Notify" name="Уведомить клиента"><bpmn:extensionElements><zeebe:taskDefinition type="notifyClient" /></bpmn:extensionElements><bpmn:incoming>Flow_small</bpmn:incoming><bpmn:incoming>Flow_3</bpmn:incoming><bpmn:outgoing>Flow_4</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:endEvent id="End"><bpmn:incoming>Flow_4</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="CheckOrder"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="CheckOrder" targetRef="IsBig"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_big" sourceRef="IsBig" targetRef="Approve" name="да"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=amount &gt; 1000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_small" sourceRef="IsBig" targetRef="Notify" name="нет"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Approve" targetRef="Notify"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Notify" targetRef="End"></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_OrderApproval">
+    <bpmndi:BPMNPlane id="Plane_OrderApproval" bpmnElement="OrderApproval">
+      <bpmndi:BPMNShape id="Start_di" bpmnElement="Start"><dc:Bounds x="42" y="102" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CheckOrder_di" bpmnElement="CheckOrder"><dc:Bounds x="120" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="IsBig_di" bpmnElement="IsBig"><dc:Bounds x="275" y="95" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Approve_di" bpmnElement="Approve"><dc:Bounds x="370" y="0" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Notify_di" bpmnElement="Notify"><dc:Bounds x="510" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_di" bpmnElement="End"><dc:Bounds x="662" y="102" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="78" y="120" /><di:waypoint x="120" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="220" y="120" /><di:waypoint x="275" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_big_di" bpmnElement="Flow_big"><di:waypoint x="300" y="95" /><di:waypoint x="300" y="40" /><di:waypoint x="370" y="40" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_small_di" bpmnElement="Flow_small"><di:waypoint x="325" y="120" /><di:waypoint x="510" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3"><di:waypoint x="470" y="40" /><di:waypoint x="560" y="40" /><di:waypoint x="560" y="80" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4"><di:waypoint x="610" y="120" /><di:waypoint x="662" y="120" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

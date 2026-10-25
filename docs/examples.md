@@ -26,9 +26,7 @@
 
 ## TestDecision: бизнес-правила DMN
 
-```
-Start → [Бизнес правило: Decision_1 → c] → [Новое правило: SubDecision → d] → End
-```
+![TestDecision: две задачи бизнес-правил подряд](images/demo-decision.svg)
 
 Две business rule task подряд: первая считает `c` по `a` и `b`, вторая — `d` по `a` и только что посчитанному `c`.
 Так в go-bpm собираются цепочки решений (зависимых решений `requiredDecision` нет).
@@ -111,15 +109,13 @@ done
 В консоли откройте экземпляр и кликните по «Бизнес правило» → «Показать сработавшие правила»: таблица `Decision_1`
 с подсвеченной строкой.
 
+![Сработавшие правила экземпляра с a = foo, b = bar: подсвечено первое правило](images/history-rules.png)
+
 ---
 
 ## TestUserTask: задачи пользователей
 
-```
-Start → [Согласовать заявку] → <Согласовано?> ──да──→ End
-              ↑                     │ нет (default)
-              └── [Исправить заявку] ←┘
-```
+![TestUserTask: «Согласовать заявку», шлюз «Согласовано?», возврат на «Исправить заявку»](images/demo-user-task.svg)
 
 - «Согласовать заявку» (`Approve`) — для групп `managers` и `admins`, форма `approve-form`.
 - «Согласовано?» — по переменной `approved` из формы.
@@ -205,7 +201,14 @@ curl -XPOST localhost:8080/api/v1/tasks/<task_uid>/complete -d '{"userId":"alice
 - **Консоль → Задачи:** пользователь `bob`, группы `managers` — «Можно взять»; пользователь `alice` — «Мои задачи».
 - **Ошибки API:** `carol` из группы `accounting` получит 403 на `claim`, `bob` — 409 на `complete` чужой задачи.
 - **История экземпляра:** клик по «Согласовать заявку» — блок «Назначение»: по карточке на каждый приход токена,
-  кто брал, когда, кто мог взять.
+  кто брал, когда, кто мог взять. На снимке заявка прошла круг: bob вернул её на исправление, alice исправила,
+  и вторую задачу согласования взяла в работу erin.
+
+  ![История TestUserTask: блок «Назначение» с двумя карточками задачи «Согласовать заявку»](images/history-user-task.png)
+
+- **Выполнение задачи** в консоли: переменные процесса на момент создания задачи и редактор результата.
+
+  ![Окно выполнения задачи «Согласовать заявку»: переменные процесса и результат](images/console-complete.png)
 - **Без `initiator`:** запустите процесс без переменных и верните на исправление. В логе
   `user task assignment skipped`, задача «Исправить» без исполнителя и кандидатов — её видит и может взять любой.
 
@@ -213,14 +216,7 @@ curl -XPOST localhost:8080/api/v1/tasks/<task_uid>/complete -d '{"userId":"alice
 
 ## TestBpmProcess: шлюзы, скрипт, параллельные ветки, call activity
 
-```
-Start → [Сделать что-то синхронно] → [Сделать асинхронно] → [Некий подпроцесс] → <amount == 55?>
-          task MySimpleMethod          service doSomeAsync    call testSubProcess       │
-                                                                                         ├─да──────────────────→ End
-                                                                                         └─нет→ [Сделать условно тоже синхронно]
-                                                                                                 → [Сделать скриптово] → <+> ┬→ [Paral 1] ┬→ <+> → End
-                                                                                                                              └→ [Paral 2] ┘
-```
+![TestBpmProcess: метод, service task, call activity, шлюз по amount, скрипт и параллельные ветки](images/demo-bpm-process.svg)
 
 ### Что внутри
 
@@ -271,6 +267,8 @@ curl -XPOST localhost:8080/api/v1/processes/TestBpmProcess/instances -d '{"varia
 - В обоих случаях в списке экземпляров два: `TestBpmProcess` и `testSubProcess` с `parent_instance_uid`
   родителя. В истории родителя клик по «Некий подпроцесс» → ссылка на дочерний экземпляр, двойной клик — переход.
 
+![История TestBpmProcess с amount = 1: пройдена ветка «нет» со скриптом и параллельными задачами; в панели — вызванный подпроцесс](images/history-call-activity.png)
+
 `Paral 1` и `Paral 2` — синхронные методы, поэтому выполняются в одном шаге друг за другом. Слияние
 `Gateway_0nsow60` ждёт обе ветки: первая пришедшая записывает себя в `bpm_parallel_sync`, вторая продолжает.
 
@@ -280,11 +278,7 @@ curl -XPOST localhost:8080/api/v1/processes/TestBpmProcess/instances -d '{"varia
 
 Процесс, который вызывает `TestBpmProcess`. Его можно запустить и сам по себе.
 
-```
-Start → [Некое действо] → <+> ┬→ [1: paralel1] ──────────────┬→ <+> → End
-                              ├→ [2: paralel2] → [4: paralel4] ┤
-                              └→ [3: paralel3] ───────────────┘
-```
+![testSubProcess: метод и три параллельные ветки service task со слиянием](images/demo-sub-process.svg)
 
 - Разветвление на три ветки, слияние ждёт три (`ParallelSyncQuantity: 3`).
 - Все задачи веток — service task: каждая ставит свою задачу очереди, и обработчики разных jobType выполняются
@@ -301,12 +295,7 @@ curl -XPOST localhost:8080/api/v1/processes/testSubProcess/instances -d '{}'
 
 ## TestTimerAndException: таймеры и ошибки
 
-```
-Start → [это 1] ──→ (⏱ 3s) → [это 2] → [это 3] → [это 4: slowTask] → [это 5: failingTask] → End
-          │ ⏱ 2s                │ ⚡ любая      │ ⏱ 1s                │ ⚡ любая
-          ↓                     ↓              ↓                     ↓
-       [это 4: метод] → End   [обработка] → End  End                End
-```
+![TestTimerAndException: граничные таймеры и ошибки, промежуточный таймер](images/demo-timer-and-exception.svg)
 
 | Элемент | Что это |
 |---|---|
@@ -394,7 +383,10 @@ func FailingTask(ctx context.Context, svc *services.Services, job bpm.Job, data 
 
 Результаты (история экземпляра без переходов):
 
-**`{"sleep1": 5}`** — граничный таймер метода:
+**`{"sleep1": 5}`** — граничный таймер метода. В истории «это 1» обведена красным — прервана, дальше пройдена ветка
+таймера:
+
+![История с sleep1 = 5: «это 1» прервана граничным таймером, пройдена «это 4»](images/history-timer.png)
 
 ```
 terminated это 1
@@ -403,7 +395,10 @@ completed  это 4 (метод)
 completed  End
 ```
 
-**`{"fail2": true}`** — граничная ошибка метода, код и текст в переменных:
+**`{"fail2": true}`** — граничная ошибка метода, код и текст в переменных. В панели граничного события видны
+`errorCode` и `errorMessage`:
+
+![История с fail2 = true: «это 2» прервана ошибкой, в панели события — errorCode FAIL2](images/history-error.png)
 
 ```
 completed  это 1

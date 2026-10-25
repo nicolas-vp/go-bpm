@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    id="Definitions_Elements" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Elements" isExecutable="true">
+    <bpmn:startEvent id="e0" name="Start event"></bpmn:startEvent>
+    <bpmn:endEvent id="e1" name="End event"></bpmn:endEvent>
+    <bpmn:intermediateCatchEvent id="e2" name="Таймер"><bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT5M</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="e3" name="Exclusive"></bpmn:exclusiveGateway>
+    <bpmn:parallelGateway id="e4" name="Parallel"></bpmn:parallelGateway>
+    <bpmn:task id="t0" name="Task: ваш метод"></bpmn:task>
+    <bpmn:serviceTask id="t1" name="Service task: обработчик"><bpmn:extensionElements><zeebe:taskDefinition type="x" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:scriptTask id="t2" name="Script task: код в схеме"></bpmn:scriptTask>
+    <bpmn:businessRuleTask id="t3" name="Business rule task: DMN"></bpmn:businessRuleTask>
+    <bpmn:userTask id="t4" name="User task: человек"></bpmn:userTask>
+    <bpmn:callActivity id="c1" name="Call activity: другой процесс"></bpmn:callActivity>
+    <bpmn:task id="b1" name="Граничный таймер"></bpmn:task>
+    <bpmn:boundaryEvent id="b1t" attachedToRef="b1"><bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT30S</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+    <bpmn:task id="b2" name="Граничная ошибка"></bpmn:task>
+    <bpmn:boundaryEvent id="b2e" attachedToRef="b2"><bpmn:errorEventDefinition /></bpmn:boundaryEvent>
+    <bpmn:subProcess id="s1" name="Sub-process">      <bpmn:startEvent id="s1a"><bpmn:outgoing>sf1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:task id="s1b" name="Шаг"><bpmn:incoming>sf1</bpmn:incoming><bpmn:outgoing>sf2</bpmn:outgoing></bpmn:task>
+      <bpmn:endEvent id="s1c"><bpmn:incoming>sf2</bpmn:incoming></bpmn:endEvent>
+</bpmn:subProcess>
+    <bpmn:sequenceFlow id="sf1" sourceRef="s1a" targetRef="s1b"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf2" sourceRef="s1b" targetRef="s1c"></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Elements">
+    <bpmndi:BPMNPlane id="Plane_Elements" bpmnElement="Elements">
+      <bpmndi:BPMNShape id="e0_di" bpmnElement="e0"><dc:Bounds x="62" y="42" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e1_di" bpmnElement="e1"><dc:Bounds x="212" y="42" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e2_di" bpmnElement="e2"><dc:Bounds x="362" y="42" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e3_di" bpmnElement="e3"><dc:Bounds x="505" y="35" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e4_di" bpmnElement="e4"><dc:Bounds x="655" y="35" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t0_di" bpmnElement="t0"><dc:Bounds x="30" y="150" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t1_di" bpmnElement="t1"><dc:Bounds x="180" y="150" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t2_di" bpmnElement="t2"><dc:Bounds x="330" y="150" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t3_di" bpmnElement="t3"><dc:Bounds x="480" y="150" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t4_di" bpmnElement="t4"><dc:Bounds x="630" y="150" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="c1_di" bpmnElement="c1"><dc:Bounds x="30" y="290" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b1_di" bpmnElement="b1"><dc:Bounds x="180" y="290" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b1t_di" bpmnElement="b1t"><dc:Bounds x="232" y="352" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b2_di" bpmnElement="b2"><dc:Bounds x="330" y="290" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b2e_di" bpmnElement="b2e"><dc:Bounds x="382" y="352" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s1_di" bpmnElement="s1" isExpanded="true"><dc:Bounds x="490" y="275" width="230" height="110" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s1a_di" bpmnElement="s1a"><dc:Bounds x="512" y="322" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s1b_di" bpmnElement="s1b"><dc:Bounds x="570" y="315" width="70" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s1c_di" bpmnElement="s1c"><dc:Bounds x="662" y="322" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1"><di:waypoint x="548" y="340" /><di:waypoint x="570" y="340" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2"><di:waypoint x="640" y="340" /><di:waypoint x="662" y="340" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

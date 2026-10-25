@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    id="Definitions_Parallel" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Parallel" isExecutable="true">
+    <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:parallelGateway id="fork" name="разветвление"><bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing><bpmn:outgoing>f3</bpmn:outgoing></bpmn:parallelGateway>
+    <bpmn:serviceTask id="a" name="Проверить паспорт"><bpmn:extensionElements><zeebe:taskDefinition type="x" /></bpmn:extensionElements><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f4</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:serviceTask id="b" name="Проверить адрес"><bpmn:extensionElements><zeebe:taskDefinition type="x" /></bpmn:extensionElements><bpmn:incoming>f3</bpmn:incoming><bpmn:outgoing>f5</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:parallelGateway id="join" name="слияние"><bpmn:incoming>f4</bpmn:incoming><bpmn:incoming>f5</bpmn:incoming><bpmn:outgoing>f6</bpmn:outgoing></bpmn:parallelGateway>
+    <bpmn:endEvent id="e"><bpmn:incoming>f6</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="fork"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f2" sourceRef="fork" targetRef="a"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f3" sourceRef="fork" targetRef="b"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f4" sourceRef="a" targetRef="join"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f5" sourceRef="b" targetRef="join"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f6" sourceRef="join" targetRef="e"></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Parallel">
+    <bpmndi:BPMNPlane id="Plane_Parallel" bpmnElement="Parallel">
+      <bpmndi:BPMNShape id="s_di" bpmnElement="s"><dc:Bounds x="42" y="92" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fork_di" bpmnElement="fork"><dc:Bounds x="125" y="85" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="178" y="116" width="90" height="14" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="a_di" bpmnElement="a"><dc:Bounds x="230" y="0" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_di" bpmnElement="b"><dc:Bounds x="230" y="140" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="join_di" bpmnElement="join"><dc:Bounds x="385" y="85" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="292" y="116" width="90" height="14" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_di" bpmnElement="e"><dc:Bounds x="482" y="92" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="78" y="110" /><di:waypoint x="125" y="110" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="150" y="85" /><di:waypoint x="150" y="40" /><di:waypoint x="230" y="40" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="150" y="135" /><di:waypoint x="150" y="180" /><di:waypoint x="230" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4"><di:waypoint x="330" y="40" /><di:waypoint x="410" y="40" /><di:waypoint x="410" y="85" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5"><di:waypoint x="330" y="180" /><di:waypoint x="410" y="180" /><di:waypoint x="410" y="135" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6"><di:waypoint x="435" y="110" /><di:waypoint x="482" y="110" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
