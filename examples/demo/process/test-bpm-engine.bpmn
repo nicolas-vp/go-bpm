@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_0cim5yh" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.51.1" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.4.0">
+  <bpmn:process id="TestBpmProcess" isExecutable="true">
+    <bpmn:task id="MySimpleMethod" name="Сделать что-то синхронно">
+      <bpmn:extensionElements>
+        <zeebe:executionListeners>
+          <zeebe:executionListener eventType="start" />
+        </zeebe:executionListeners>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_111nka2</bpmn:incoming>
+      <bpmn:outgoing>Flow_03a5fr8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:startEvent id="Event_0kk8den">
+      <bpmn:outgoing>Flow_111nka2</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_111nka2" sourceRef="Event_0kk8den" targetRef="MySimpleMethod" />
+    <bpmn:sequenceFlow id="Flow_03a5fr8" sourceRef="MySimpleMethod" targetRef="Activity_08uf92k" />
+    <bpmn:serviceTask id="Activity_08uf92k" name="Сделать асинхронно">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="doSomeAsync" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_03a5fr8</bpmn:incoming>
+      <bpmn:outgoing>Flow_1s7l1os</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:task id="MySecondSimpleMethod" name="Сделать условно тоже синхронно">
+      <bpmn:incoming>Flow_1wibfjd</bpmn:incoming>
+      <bpmn:outgoing>Flow_0t7m5f1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_1nptppd" default="Flow_1wibfjd">
+      <bpmn:incoming>Flow_1erop58</bpmn:incoming>
+      <bpmn:outgoing>Flow_1wibfjd</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0fs8mon</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_1s7l1os" sourceRef="Activity_08uf92k" targetRef="Activity_1d5xa2z" />
+    <bpmn:sequenceFlow id="Flow_1wibfjd" sourceRef="Gateway_1nptppd" targetRef="MySecondSimpleMethod" />
+    <bpmn:endEvent id="Event_0xmmpuz">
+      <bpmn:incoming>Flow_0fs8mon</bpmn:incoming>
+      <bpmn:incoming>Flow_12cdasv</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_0t7m5f1" sourceRef="MySecondSimpleMethod" targetRef="Activity_0shk46q" />
+    <bpmn:sequenceFlow id="Flow_0fs8mon" name="Если a = 55" sourceRef="Gateway_1nptppd" targetRef="Event_0xmmpuz">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=amount == 55</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_05okllq" sourceRef="Activity_0shk46q" targetRef="Gateway_0l6eu7y" />
+    <bpmn:scriptTask id="Activity_0shk46q" name="Сделать скриптово">
+      <bpmn:extensionElements>
+        <zeebe:script expression="=fmt.Println(&#34;Hey&#34;)" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0t7m5f1</bpmn:incoming>
+      <bpmn:outgoing>Flow_05okllq</bpmn:outgoing>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_04lr3vf" sourceRef="Gateway_0l6eu7y" targetRef="ParalMethod1" />
+    <bpmn:parallelGateway id="Gateway_0l6eu7y">
+      <bpmn:incoming>Flow_05okllq</bpmn:incoming>
+      <bpmn:outgoing>Flow_04lr3vf</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1siajou</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="Flow_12cdasv" sourceRef="Gateway_0nsow60" targetRef="Event_0xmmpuz" />
+    <bpmn:parallelGateway id="Gateway_0nsow60">
+      <bpmn:incoming>Flow_1lm2jod</bpmn:incoming>
+      <bpmn:incoming>Flow_1wzywny</bpmn:incoming>
+      <bpmn:outgoing>Flow_12cdasv</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:task id="ParalMethod1" name="Paral 1">
+      <bpmn:incoming>Flow_04lr3vf</bpmn:incoming>
+      <bpmn:outgoing>Flow_1lm2jod</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1lm2jod" sourceRef="ParalMethod1" targetRef="Gateway_0nsow60" />
+    <bpmn:task id="ParalMethod2" name="Paral 2">
+      <bpmn:incoming>Flow_1siajou</bpmn:incoming>
+      <bpmn:outgoing>Flow_1wzywny</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1siajou" sourceRef="Gateway_0l6eu7y" targetRef="ParalMethod2" />
+    <bpmn:sequenceFlow id="Flow_1wzywny" sourceRef="ParalMethod2" targetRef="Gateway_0nsow60" />
+    <bpmn:sequenceFlow id="Flow_1erop58" sourceRef="Activity_1d5xa2z" targetRef="Gateway_1nptppd" />
+    <bpmn:callActivity id="Activity_1d5xa2z" name="Некий подпроцесс">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="testSubProcess" propagateAllChildVariables="false" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1s7l1os</bpmn:incoming>
+      <bpmn:outgoing>Flow_1erop58</bpmn:outgoing>
+    </bpmn:callActivity>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="TestBpmProcess">
+      <bpmndi:BPMNShape id="Activity_0nongs5_di" bpmnElement="MySimpleMethod">
+        <dc:Bounds x="290" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0kk8den_di" bpmnElement="Event_0kk8den">
+        <dc:Bounds x="152" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_18jbyma_di" bpmnElement="Activity_08uf92k">
+        <dc:Bounds x="450" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0pevpk3_di" bpmnElement="MySecondSimpleMethod">
+        <dc:Bounds x="910" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1nptppd_di" bpmnElement="Gateway_1nptppd" isMarkerVisible="true">
+        <dc:Bounds x="805" y="195" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0xmmpuz_di" bpmnElement="Event_0xmmpuz">
+        <dc:Bounds x="1572" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1xcinmb_di" bpmnElement="Activity_0shk46q">
+        <dc:Bounds x="1070" y="180" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_10teyuc_di" bpmnElement="Gateway_0l6eu7y">
+        <dc:Bounds x="1215" y="195" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_0pdb2nm_di" bpmnElement="Gateway_0nsow60">
+        <dc:Bounds x="1445" y="195" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1x50ste_di" bpmnElement="ParalMethod1">
+        <dc:Bounds x="1310" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1y0w6qq_di" bpmnElement="ParalMethod2">
+        <dc:Bounds x="1310" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0ugc4ff_di" bpmnElement="Activity_1d5xa2z">
+        <dc:Bounds x="630" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_111nka2_di" bpmnElement="Flow_111nka2">
+        <di:waypoint x="188" y="220" />
+        <di:waypoint x="290" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_03a5fr8_di" bpmnElement="Flow_03a5fr8">
+        <di:waypoint x="390" y="220" />
+        <di:waypoint x="450" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1s7l1os_di" bpmnElement="Flow_1s7l1os">
+        <di:waypoint x="550" y="220" />
+        <di:waypoint x="630" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1wibfjd_di" bpmnElement="Flow_1wibfjd">
+        <di:waypoint x="855" y="220" />
+        <di:waypoint x="910" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0t7m5f1_di" bpmnElement="Flow_0t7m5f1">
+        <di:waypoint x="1010" y="220" />
+        <di:waypoint x="1070" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0fs8mon_di" bpmnElement="Flow_0fs8mon">
+        <di:waypoint x="830" y="245" />
+        <di:waypoint x="830" y="410" />
+        <di:waypoint x="1590" y="410" />
+        <di:waypoint x="1590" y="238" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1180" y="392" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_05okllq_di" bpmnElement="Flow_05okllq">
+        <di:waypoint x="1170" y="220" />
+        <di:waypoint x="1215" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_04lr3vf_di" bpmnElement="Flow_04lr3vf">
+        <di:waypoint x="1240" y="195" />
+        <di:waypoint x="1240" y="120" />
+        <di:waypoint x="1310" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_12cdasv_di" bpmnElement="Flow_12cdasv">
+        <di:waypoint x="1495" y="220" />
+        <di:waypoint x="1572" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1lm2jod_di" bpmnElement="Flow_1lm2jod">
+        <di:waypoint x="1410" y="120" />
+        <di:waypoint x="1470" y="120" />
+        <di:waypoint x="1470" y="195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1siajou_di" bpmnElement="Flow_1siajou">
+        <di:waypoint x="1265" y="220" />
+        <di:waypoint x="1310" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1wzywny_di" bpmnElement="Flow_1wzywny">
+        <di:waypoint x="1410" y="220" />
+        <di:waypoint x="1445" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1erop58_di" bpmnElement="Flow_1erop58">
+        <di:waypoint x="730" y="220" />
+        <di:waypoint x="805" y="220" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

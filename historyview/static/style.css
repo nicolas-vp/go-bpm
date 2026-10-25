@@ -1,0 +1,433 @@
+:root {
+  --bg: #ffffff;
+  --text: #001a34;
+  --muted: #707f8d;
+  --border: #d6dbe0;
+  /* синий основных кнопок */
+  --accent: #005bff;
+  --accent-hover: #0048cc;
+  /* светло-голубой неактивных кнопок: им подсвечены пройденные элементы */
+  --accent-soft: #e0ecff;
+  --completed: var(--accent-soft);
+  --error-bg: #ffebe9;
+  --error-text: #82071e;
+  /* задачу прервало граничное событие: таймер или ошибка */
+  --terminated: #f91155;
+  --panel-bg: #f2f3f5;
+  --link: var(--accent);
+  /* выбранный элемент темнее пройденных, иначе выбранный переход не отличить */
+  --selected: var(--text);
+  /* сработавшее правило таблицы решения: как пройденные элементы процесса */
+  --rule-hit: var(--completed);
+  --rule-hit-strong: var(--accent);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bar h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.search {
+  display: flex;
+  flex: 1 1 360px;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.search input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* синяя кнопка: «Показать», «Перейти в историю подпроцесса» */
+.search button,
+.button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search button:hover,
+.button:hover {
+  background: var(--accent-hover);
+}
+
+.search button:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.parent a,
+.panel a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.parent a:hover,
+.panel a:hover {
+  text-decoration: underline;
+}
+
+.hint {
+  color: var(--muted);
+}
+
+.info b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.info code {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+}
+
+.swatch-completed { background: var(--completed); }
+.swatch-active { border: 2px dashed var(--accent); }
+.swatch-terminated { border: 2px solid var(--terminated); background: var(--completed); }
+.swatch-rule { background: var(--rule-hit); }
+
+.error {
+  padding: 8px 16px;
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: 45vw;
+  border-left: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-title {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.panel-type {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.panel-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 24px;
+}
+
+.panel h2 {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.panel h2:first-child {
+  margin-top: 0;
+}
+
+.children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.children li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.child {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pass {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.pass-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pass-event {
+  font-weight: 600;
+}
+
+.pass-time,
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vars {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: var(--panel-bg);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .workspace {
+    flex-direction: column;
+  }
+
+  .panel {
+    width: auto;
+    max-width: none;
+    max-height: 50vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* пройденные элементы: заливка фигур и цвет линий переходов */
+.djs-shape.bpm-completed .djs-visual > :nth-child(1),
+.djs-shape.bpm-completed .djs-visual > circle {
+  /* у таймеров и граничных событий двойной круг: внутренний иначе перекрывает заливку */
+  fill: var(--completed) !important;
+}
+
+.djs-connection.bpm-completed .djs-visual > path {
+  stroke: var(--accent) !important;
+}
+
+/* запущенные и ещё не завершённые элементы: service task ждёт задачу очереди, callActivity - вызванный процесс */
+.djs-shape.bpm-active .djs-visual > :nth-child(1) {
+  stroke: var(--accent) !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: 6 4;
+}
+
+/* задачи, которые прервало граничное событие: пройдены, но не выполнены */
+.djs-shape.bpm-terminated .djs-visual > :nth-child(1) {
+  fill: var(--completed) !important;
+  stroke: var(--terminated) !important;
+  stroke-width: 3px !important;
+}
+
+/* выбранный элемент: в viewer нет модуля outline, выделяем контур фигуры или линию */
+.djs-shape.bpm-selected .djs-visual > :nth-child(1) {
+  stroke: var(--selected) !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: none;
+}
+
+.djs-connection.bpm-selected .djs-visual > path {
+  stroke: var(--selected) !important;
+  stroke-width: 3px !important;
+}
+
+/* элементы с вызванными экземплярами: переход по клику в панели или двойным кликом */
+.djs-element.bpm-link {
+  cursor: pointer;
+}
+
+/* окно со сработавшими правилами задачи бизнес-правила: таблица решения DMN (dmn-js) */
+.rules {
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, calc(100vw - 32px));
+  height: min(800px, calc(100vh - 32px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.rules:not([open]) {
+  display: none;
+}
+
+.rules::backdrop {
+  background: rgba(0, 26, 52, 0.35);
+}
+
+.rules-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rules-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* вызов решения: если задача выполнялась несколько раз, вызовов несколько */
+.rules-call {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rules-call:hover {
+  border-color: var(--accent);
+}
+
+.rules-call[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.rules-message {
+  padding: 8px 16px;
+  color: var(--muted);
+}
+
+.rules-result {
+  margin: 8px 16px 0;
+  max-height: 96px;
+}
+
+.rules-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 16px 16px;
+}
+
+/* сработавшие правила: app.js ставит класс ячейкам строки по data-row-id, который dmn-js даёт ячейкам */
+.rules-canvas td.bpm-rule-hit {
+  background: var(--rule-hit) !important;
+}
+
+.rules-canvas td.rule-index.bpm-rule-hit {
+  background: var(--rule-hit-strong) !important;
+  color: #fff;
+}

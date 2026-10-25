@@ -1,0 +1,22 @@
+// Package model - модель данных процессов
+package model
+
+// DataModel - переменные процессов. С ней работают методы и скрипты задач, обработчики jobType,
+// условия шлюзов и решения DMN: любая переменная, которую они используют, должна быть полем модели.
+// Поле получает переменную процесса по тегу json, например:
+//
+//	Amount float64 `json:"amount"`
+//
+// Вложенные структуры дают пути: client.account.number в BPMN и DMN - поле data.Client.Account.Number.
+// После метода поля модели записываются поверх переменных процесса. Поле с omitempty
+// в нулевом значении не меняет переменную
+type DataModel struct {
+	// Amount - условие шлюза Gateway_1nptppd в TestBpmProcess
+	Amount int `json:"amount"`
+
+	// Входы и выходы решений Decision_1 (a, b -> c) и SubDecision (a, c -> d) в TestDecision
+	A string `json:"a"`
+	B string `json:"b"`
+	C string `json:"c"`
+	D string `json:"d"`
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>История процесса</title>
+  <link rel="stylesheet" href="static/vendor/bpmn-js-18.31.0/diagram-js.css">
+  <link rel="stylesheet" href="static/vendor/bpmn-js-18.31.0/bpmn-js.css">
+  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-shared.css">
+  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-decision-table.css">
+  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-drd.css">
+  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-font-embedded.css">
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>История процесса</h1>
+    <form id="instance-form" class="search">
+      <input id="instance-id" name="instanceId" type="text" placeholder="instance id" autocomplete="off" spellcheck="false" required>
+      <button type="submit">Показать</button>
+    </form>
+  </header>
+
+  <section class="summary">
+    <div class="summary-main">
+      <div id="parent" class="parent" hidden></div>
+      <div id="info" class="info">Введите id экземпляра процесса</div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch swatch-completed"></i>пройдено</span>
+      <span><i class="swatch swatch-active"></i>выполняется</span>
+      <span><i class="swatch swatch-terminated"></i>прервано</span>
+      <span class="hint">клик по элементу — переменные и подпроцессы</span>
+    </div>
+  </section>
+  <div id="error" class="error" hidden></div>
+
+  <div class="workspace">
+    <main id="canvas" class="canvas"></main>
+    <aside id="panel" class="panel" hidden>
+      <header class="panel-head">
+        <div>
+          <div id="panel-title" class="panel-title"></div>
+          <div id="panel-type" class="panel-type"></div>
+        </div>
+        <button id="panel-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
+      </header>
+      <div id="panel-body" class="panel-body"></div>
+    </aside>
+  </div>
+
+  <dialog id="rules" class="rules" aria-labelledby="rules-title">
+    <header class="panel-head">
+      <div>
+        <div id="rules-title" class="panel-title"></div>
+        <div id="rules-subtitle" class="panel-type"></div>
+      </div>
+      <button id="rules-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <div class="rules-bar">
+      <div id="rules-calls" class="rules-calls"></div>
+      <div class="legend"><span><i class="swatch swatch-rule"></i>сработало</span></div>
+    </div>
+    <div id="rules-message" class="rules-message" hidden></div>
+    <pre id="rules-result" class="vars rules-result" hidden></pre>
+    <div id="rules-canvas" class="rules-canvas"></div>
+  </dialog>
+
+  <script src="static/vendor/bpmn-js-18.31.0/bpmn-navigated-viewer.production.min.js"></script>
+  <script src="static/vendor/dmn-js-17.12.0/dmn-viewer.production.min.js"></script>
+  <script src="static/app.js"></script>
+</body>
+</html>

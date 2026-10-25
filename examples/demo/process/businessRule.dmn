@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_0inndja" name="DRD" namespace="http://camunda.org/schema/1.0/dmn" exporter="Camunda Modeler" exporterVersion="5.51.1" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
+  <decision id="Decision_1" name="Test Decision">
+    <variable id="Variable_1" name="Test Decision" typeRef="Any" />
+    <decisionTable id="DecisionTable_1cbjeqq">
+      <input id="Input_1" label="Некая переменная a">
+        <inputExpression id="InputExpression_1" typeRef="string">
+          <text>a</text>
+        </inputExpression>
+      </input>
+      <input id="InputClause_1qv2rv5" label="Некая переменная b">
+        <inputExpression id="LiteralExpression_0k59zza" typeRef="string">
+          <text>b</text>
+        </inputExpression>
+      </input>
+      <output id="Output_1" label="Полученные значения" name="c" typeRef="string" />
+      <rule id="DecisionRule_04e4bk8">
+        <inputEntry id="UnaryTests_064vure">
+          <text>"foo"</text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_0a83hx8">
+          <text>"bar"</text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_0v71uky">
+          <text>"correct foobar"</text>
+        </outputEntry>
+      </rule>
+      <rule id="DecisionRule_1a2n073">
+        <inputEntry id="UnaryTests_09rv4pa">
+          <text>"some"</text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_0uhlto1">
+          <text></text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_0g63no7">
+          <text>"some a"</text>
+        </outputEntry>
+      </rule>
+      <rule id="DecisionRule_0t56a5i">
+        <inputEntry id="UnaryTests_1hq3qmo">
+          <text></text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_0skmxyu">
+          <text>"some"</text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_1fi6ugi">
+          <text>"some b"</text>
+        </outputEntry>
+      </rule>
+      <rule id="DecisionRule_1kb19kv">
+        <inputEntry id="UnaryTests_10ic7sl">
+          <text></text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_0brm6ov">
+          <text></text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_11ypvyt">
+          <text>"default"</text>
+        </outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <decision id="SubDecision" name="Sub Decision">
+    <decisionTable id="DecisionTable_1i3yeai">
+      <input id="InputClause_0dchhq1">
+        <inputExpression id="LiteralExpression_0clf0wo" typeRef="string">
+          <text>a</text>
+        </inputExpression>
+      </input>
+      <input id="InputClause_12qitgb">
+        <inputExpression id="LiteralExpression_04lyotk" typeRef="string">
+          <text>c</text>
+        </inputExpression>
+      </input>
+      <output id="OutputClause_151otku" name="d" typeRef="string" />
+      <rule id="DecisionRule_1fpl3ms">
+        <inputEntry id="UnaryTests_10r48mc">
+          <text>"some"</text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_0tjngzy">
+          <text>"red"</text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_1s5j8e4">
+          <text>"make KYC cool!"</text>
+        </outputEntry>
+      </rule>
+      <rule id="DecisionRule_0le0cvg">
+        <inputEntry id="UnaryTests_0fg7gqj">
+          <text></text>
+        </inputEntry>
+        <inputEntry id="UnaryTests_1f4gi7w">
+          <text></text>
+        </inputEntry>
+        <outputEntry id="LiteralExpression_1rtycjt">
+          <text>""</text>
+        </outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape id="Decision_0a388h4_di" dmnElementRef="Decision_1">
+        <dc:Bounds height="80" width="180" x="160" y="80" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="DMNShape_0zjl7x9" dmnElementRef="SubDecision">
+        <dc:Bounds height="80" width="180" x="160" y="190" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>
