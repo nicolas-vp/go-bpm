@@ -8,3 +8,4 @@ BPMN и DMN демо-сервиса. После изменения: `make genera
 | `testSubProcess.bpmn` | `testSubProcess` | параллельные service task (`paralel1`…`paralel4`) со слиянием |
 | `testTimerAndException.bpmn` | `TestTimerAndException` | промежуточный таймер, граничные таймеры и ошибки |
 | `testBusinessRule.bpmn` + `businessRule.dmn` | `TestDecision` | две задачи бизнес-правил подряд: `Decision_1`, `SubDecision` |
+| `testUserTask.bpmn` | `TestUserTask` | задачи пользователей: «Согласовать» для групп `managers`, `admins`, по `approved = false` — «Исправить» исполнителю из переменной `initiator` и снова на согласование |

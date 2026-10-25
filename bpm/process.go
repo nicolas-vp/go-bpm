@@ -43,6 +43,22 @@ type Expression struct {
 	Timer time.Duration
 	// Boundaries - прерывающие граничные события task, scriptTask и service task
 	Boundaries []Boundary
+	// UserTask - для ActivateTypeUserTask: кому назначается задача
+	UserTask *UserTask
+}
+
+// UserTask - назначение задачи пользователя, как в Camunda 7. Значение вида "${name}" - переменная процесса
+// (путь через точку), её значение берётся, когда токен приходит в задачу; остальные значения - как есть
+type UserTask struct {
+	// Name - название задачи из BPMN, для списка задач
+	Name string
+	// Assignee - исполнитель: задача сразу назначена ему
+	Assignee string
+	// CandidateUsers, CandidateGroups - кто может взять задачу в работу. Переменная может содержать строку или список строк
+	CandidateUsers  []string
+	CandidateGroups []string
+	// FormKey - ключ формы задачи (camunda:formKey, zeebe:formDefinition), движок его только передаёт
+	FormKey string
 }
 
 // Timers возвращает граничные таймеры задачи

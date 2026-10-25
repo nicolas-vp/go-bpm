@@ -1,0 +1,540 @@
+/* цвета и кнопки - как у страницы истории historyview, консоль и история выглядят одним продуктом */
+:root {
+  --bg: #ffffff;
+  --text: #001a34;
+  --muted: #707f8d;
+  --border: #d6dbe0;
+  --accent: #005bff;
+  --accent-hover: #0048cc;
+  --accent-soft: #e0ecff;
+  --error-bg: #ffebe9;
+  --error-text: #82071e;
+  --failed: #f91155;
+  --panel-bg: #f2f3f5;
+  --ok-bg: #e3f6ea;
+  --ok-text: #0b6b33;
+}
+
+* { box-sizing: border-box; }
+
+/* hidden прячет и элементы, которым стили задают display: flex или grid */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 32px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bar h1 {
+  margin: 0;
+  padding: 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tabs a {
+  padding: 14px 12px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  color: var(--text);
+}
+
+.tabs a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h2 {
+  margin: 4px 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+h3 {
+  margin: 24px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+h4 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-head h2,
+.section-head h3 {
+  margin-bottom: 12px;
+}
+
+.muted { color: var(--muted); }
+.strong { font-weight: 600; }
+.nowrap { white-space: nowrap; }
+
+code {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.error {
+  margin: 12px 16px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error-text);
+  white-space: pre-wrap;
+}
+
+.dialog .error {
+  margin: 12px 0 0;
+}
+
+/* кнопки: синяя - основное действие, светлая - второстепенное */
+.button,
+.button-quiet {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tasks-refresh {
+  margin-top: 12px;
+}
+
+.button-quiet {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.button-quiet:hover:not(:disabled) {
+  background: #cfe0ff;
+}
+
+.button-quiet:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.button:focus-visible,
+.button-quiet:focus-visible,
+.tabs a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.panel-close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panel-close:hover {
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+/* поля форм */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.field-wide {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.field > span,
+.field > legend {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+input,
+select,
+textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.form .actions {
+  justify-content: flex-start;
+}
+
+/* редактор переменных */
+.vars-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vars-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 110px minmax(120px, 2fr) 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.vars-row input,
+.vars-row select {
+  min-width: 0;
+}
+
+.vars-row input:first-child,
+.vars-json {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.vars-json {
+  width: 100%;
+  resize: vertical;
+}
+
+.vars-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vars {
+  max-height: 240px;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.notice {
+  max-width: 720px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.notice code {
+  color: var(--text);
+}
+
+.notice-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+/* таблицы */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  background: var(--panel-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table td code.muted {
+  display: block;
+}
+
+.table-rows tbody tr {
+  cursor: pointer;
+}
+
+.table-rows tbody tr:hover,
+.table-rows tbody tr:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.table .empty,
+.cards .empty {
+  padding: 24px 12px;
+  color: var(--muted);
+  text-align: center;
+  cursor: default;
+}
+
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.count-failed {
+  color: var(--failed);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-running { background: var(--accent-soft); color: var(--accent); }
+.badge-completed { background: var(--ok-bg); color: var(--ok-text); }
+.badge-failed { background: var(--error-bg); color: var(--error-text); }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* схема процесса */
+.diagram-box {
+  margin-top: 24px;
+}
+
+.diagram {
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* задачи */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.count {
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--panel-bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* окно выполнения задачи */
+.dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0, 26, 52, 0.2);
+}
+
+.dialog::backdrop {
+  background: rgba(0, 26, 52, 0.4);
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.panel-type {
+  color: var(--muted);
+}
+
+.dialog-body {
+  padding: 0 16px 16px;
+}
+
+.dialog-foot {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .vars-row {
+    grid-template-columns: 1fr 100px 32px;
+  }
+
+  .vars-row > :nth-child(3) {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .field {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+}

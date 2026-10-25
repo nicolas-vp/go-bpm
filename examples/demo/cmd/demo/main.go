@@ -1,11 +1,19 @@
-// Демо-сервис go-bpm: процессы из examples/demo/process, JSON API и страница истории на одном порту.
+// Демо-сервис go-bpm: процессы из examples/demo/process, JSON API и консоль /ui/ с историей экземпляров на одном порту.
 //
 //	go run ./examples/demo/cmd/demo -dsn postgres://postgres:postgres@localhost:5432/go_bpm?sslmode=disable
 //
-// Запуск процесса и история:
+// Запуск процесса, поиск экземпляров и история:
 //
-//	curl -XPOST localhost:8080/api/v1/processes/TestDecision/instances -d '{"variables":{"a":"some","b":"x"}}'
-//	open http://localhost:8080/history/?instanceId=<id>
+//	curl -XPOST localhost:8080/api/v1/processes/TestDecision/instances -d '{"variables":{"a":"some","b":"x"},"businessKey":"order-1"}'
+//	curl 'localhost:8080/api/v1/instances?processName=TestDecision&status=completed'
+//
+// Задачи пользователей: очередь группы, взять в работу, завершить:
+//
+//	curl -XPOST localhost:8080/api/v1/processes/TestUserTask/instances -d '{"variables":{"initiator":"alice"}}'
+//	curl 'localhost:8080/api/v1/tasks?candidateUser=bob&candidateGroup=managers'
+//	curl -XPOST localhost:8080/api/v1/tasks/<task id>/claim -d '{"userId":"bob","groups":["managers"]}'
+//	curl -XPOST localhost:8080/api/v1/tasks/<task id>/complete -d '{"userId":"bob","variables":{"approved":true}}'
+//	open http://localhost:8080/ui/history/?instanceId=<id>
 package main
 
 import (
@@ -24,10 +32,10 @@ import (
 	"github.com/nicolas-vp/go-bpm/engine"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
-	"github.com/nicolas-vp/go-bpm/historyview"
 	"github.com/nicolas-vp/go-bpm/httpapi"
 	"github.com/nicolas-vp/go-bpm/migrations"
 	"github.com/nicolas-vp/go-bpm/queue"
+	"github.com/nicolas-vp/go-bpm/webui"
 )
 
 func main() {
@@ -89,7 +97,9 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 
 	mux := http.NewServeMux()
 	httpapi.Register(mux, bpmEngine, historyReader)
-	historyview.Register(mux, historyReader)
+	httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, bpmEngine))
+	webui.Register(mux, historyReader)
+	mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	q.Start(ctx)
@@ -97,7 +107,7 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
-	log.Info("demo started", "addr", addr, "history", "http://localhost"+addr+"/history/?instanceId=<id>")
+	log.Info("demo started", "addr", addr, "console", "http://localhost"+addr+"/ui/")
 
 	select {
 	case err := <-serveErr:

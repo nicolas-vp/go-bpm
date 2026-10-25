@@ -29,7 +29,7 @@ func (s *Engine) handleSystemTask(ctx context.Context, task *queue.Task) error {
 	switch st.Type {
 	case systemStart:
 		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
-			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveActivate)
+			return s.startRoot(ctx, tx, st.Message)
 		})
 		return nil
 	case systemTimer:
@@ -37,9 +37,22 @@ func (s *Engine) handleSystemTask(ctx context.Context, task *queue.Task) error {
 			return s.fireTimer(ctx, tx, st.Message, st.Boundary)
 		})
 		return nil
+	case systemUserTask:
+		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveComplete)
+		})
+		return nil
 	default:
 		return fmt.Errorf("%w: unknown system task type %q", queue.ErrCancel, st.Type)
 	}
+}
+
+// startRoot - шаг системной задачи старта: экземпляр из StartProcess входит в стартовое событие
+func (s *Engine) startRoot(ctx context.Context, tx queue.Tx, message *instanceMessage) error {
+	if err := s.startInstance(ctx, tx, message); err != nil {
+		return err
+	}
+	return s.moveNext(ctx, tx, message, message.CurrentPosition, moveActivate)
 }
 
 func (s *Engine) serviceTaskHandler(taskType string, handler bpm.HandlerFunc) queue.Handler {

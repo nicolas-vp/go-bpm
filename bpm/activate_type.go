@@ -19,6 +19,8 @@ const (
 	// ActivateTypeBoundary - граничное событие задачи. Токен в него не приходит по sequence flow:
 	// движок завершает его, когда сработал таймер или задача вернула ошибку (Expression.Boundaries задачи)
 	ActivateTypeBoundary ActivateType = 9
+	// ActivateTypeUserTask - задача пользователя: движок создаёт её в bpm_user_task и ждёт, пока её завершат через API
+	ActivateTypeUserTask ActivateType = 10
 )
 
 var activateTypeNames = map[ActivateType]string{
@@ -32,6 +34,7 @@ var activateTypeNames = map[ActivateType]string{
 	ActivateTypeCallActivity:    "CallActivity",
 	ActivateTypeTimer:           "Timer",
 	ActivateTypeBoundary:        "Boundary",
+	ActivateTypeUserTask:        "UserTask",
 }
 
 // String - имя без префикса: ActivateTypeQueue -> "Queue"

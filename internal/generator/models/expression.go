@@ -25,4 +25,6 @@ type Expression struct {
 	Timer time.Duration
 	// Boundaries - граничные события задачи
 	Boundaries []bpm.Boundary
+	// UserTask - назначение задачи пользователя
+	UserTask *bpm.UserTask
 }

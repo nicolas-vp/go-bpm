@@ -9,6 +9,7 @@ import (
 	test_decision "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_decision"
 	test_sub_process "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_sub_process"
 	test_timer_and_exception "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_timer_and_exception"
+	test_user_task "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_user_task"
 	bpmn_files "github.com/nicolas-vp/go-bpm/examples/demo/process"
 )
 
@@ -18,6 +19,7 @@ func Processes(svc *services.Services) map[string]bpm.Process {
 		"TestBpmProcess":        {Flows: test_bpm_process.Deployment(svc), BPMN: bpmn_files.BPMN["test-bpm-engine.bpmn"]},
 		"TestDecision":          {Flows: test_decision.Deployment(svc), BPMN: bpmn_files.BPMN["testBusinessRule.bpmn"]},
 		"TestTimerAndException": {Flows: test_timer_and_exception.Deployment(svc), BPMN: bpmn_files.BPMN["testTimerAndException.bpmn"]},
+		"TestUserTask":          {Flows: test_user_task.Deployment(svc), BPMN: bpmn_files.BPMN["testUserTask.bpmn"]},
 		"testSubProcess":        {Flows: test_sub_process.Deployment(svc), BPMN: bpmn_files.BPMN["testSubProcess.bpmn"]},
 	}
 }

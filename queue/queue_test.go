@@ -144,6 +144,61 @@ func TestNonRetryableAndCancel(t *testing.T) {
 	status(t, pool, "p", queue.StatusFailed)
 }
 
+// TestOnFailed: OnFailed выполняется в tx, которая помечает задачу failed; упавший OnFailed не мешает ей упасть
+func TestOnFailed(t *testing.T) {
+	pool := pgtest.Pool(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `create table if not exists queue_test_marks (key text primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `truncate queue_test_marks`); err != nil {
+		t.Fatal(err)
+	}
+
+	q := newQueue(t, pool)
+	failing := func(ctx context.Context, task *queue.Task) error { return queue.ErrNonRetryable }
+	q.Register("t.onfailed", failing, queue.KindOptions{MaxAttempts: 3, OnFailed: func(ctx context.Context, tx queue.Tx, task *queue.Task) error {
+		_, err := tx.Exec(ctx, `insert into queue_test_marks (key) values ('failed')`)
+		return err
+	}})
+	q.Register("t.onfailed.broken", failing, queue.KindOptions{OnFailed: func(ctx context.Context, tx queue.Tx, task *queue.Task) error {
+		if _, err := tx.Exec(ctx, `insert into queue_test_marks (key) values ('broken')`); err != nil {
+			return err
+		}
+		return errors.New("on failed boom")
+	}})
+	q.Register("t.cancel.nofail", func(ctx context.Context, task *queue.Task) error {
+		return queue.ErrCancel
+	}, queue.KindOptions{OnFailed: func(ctx context.Context, tx queue.Tx, task *queue.Task) error {
+		_, err := tx.Exec(ctx, `insert into queue_test_marks (key) values ('cancelled')`)
+		return err
+	}})
+	start(t, q)
+
+	push(t, q, "t.onfailed", "of")
+	push(t, q, "t.onfailed.broken", "ob")
+	push(t, q, "t.cancel.nofail", "oc")
+	status(t, pool, "of", queue.StatusFailed)
+	status(t, pool, "ob", queue.StatusFailed)
+	status(t, pool, "oc", queue.StatusCancelled)
+	var marks []string
+	rows, err := pool.Query(ctx, `select key from queue_test_marks order by key`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			t.Fatal(err)
+		}
+		marks = append(marks, key)
+	}
+	// упавший OnFailed откатился вместе со своей вставкой, отмена OnFailed не вызывает
+	if len(marks) != 1 || marks[0] != "failed" {
+		t.Errorf("marks = %v, want [failed]", marks)
+	}
+}
+
 // TestCallbackErrorRetries: упавший колбэк откатывает завершение, задача повторяется
 func TestCallbackErrorRetries(t *testing.T) {
 	pool := pgtest.Pool(t)

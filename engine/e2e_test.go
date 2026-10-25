@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nicolas-vp/go-bpm/bpm"
 	"github.com/nicolas-vp/go-bpm/engine"
@@ -46,7 +47,11 @@ func TestEndToEnd(t *testing.T) {
 	}
 	instances := make(map[string]uuid.UUID)
 	for name := range processes {
-		id, err := e.StartProcess(ctx, name, variables[name])
+		// задачи пользователей сами не завершатся, этот процесс проходит TestUserTasks
+		if name == "TestUserTask" {
+			continue
+		}
+		id, err := e.StartProcess(ctx, name, variables[name], engine.WithBusinessKey("key-"+name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -54,26 +59,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// таймеры демо-процессов - секунды
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		var pending, failed int
-		err := pool.QueryRow(ctx, `select count(*) filter (where status = 'pending'), count(*) filter (where status = 'failed') from bpm_queue`).Scan(&pending, &failed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if failed > 0 {
-			var lastError string
-			_ = pool.QueryRow(ctx, `select kind || ': ' || coalesce(last_error, '') from bpm_queue where status = 'failed' limit 1`).Scan(&lastError)
-			t.Fatalf("%d failed tasks, first: %s", failed, lastError)
-		}
-		if pending == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d tasks still pending", pending)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitQueue(t, pool, 30*time.Second)
 
 	reader := engine.NewHistoryReader(pool, processes, bpmgen.Decisions)
 	for name, id := range instances {
@@ -92,6 +78,42 @@ func TestEndToEnd(t *testing.T) {
 		if _, err := reader.GetDiagram(ctx, id); err != nil {
 			t.Errorf("%s: diagram: %v", name, err)
 		}
+		instance, err := reader.GetInstance(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if instance.ProcessName != name || instance.BusinessKey != "key-"+name || instance.Status != engine.InstanceCompleted ||
+			instance.ParentInstanceUid != nil || instance.UpdatedAt.Before(instance.CreatedAt) {
+			t.Errorf("%s: instance = %+v", name, instance)
+		}
+		found, err := reader.ListInstances(ctx, engine.InstanceFilter{ProcessName: name, Status: engine.InstanceCompleted, BusinessKey: "key-" + name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(found) != 1 || found[0].InstanceUid != id {
+			t.Errorf("%s: list instances = %+v", name, found)
+		}
+	}
+
+	// дочерние экземпляры (подпроцессы, callActivity) тоже завершены и наследуют бизнес-ключ
+	all, err := reader.ListInstances(ctx, engine.InstanceFilter{Limit: engine.MaxInstancesLimit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, instance := range all {
+		if instance.Status != engine.InstanceCompleted || instance.BusinessKey == "" {
+			t.Errorf("instance = %+v", instance)
+		}
+	}
+	if running, err := reader.ListInstances(ctx, engine.InstanceFilter{Status: engine.InstanceRunning}); err != nil || len(running) != 0 {
+		t.Errorf("running instances = %+v, err %v", running, err)
+	}
+	// страница: before отсекает уже полученные
+	if len(all) > 1 {
+		page, err := reader.ListInstances(ctx, engine.InstanceFilter{Before: all[0].InstanceUid, Limit: 1})
+		if err != nil || len(page) != 1 || page[0].InstanceUid != all[1].InstanceUid {
+			t.Errorf("page after %s = %+v, err %v", all[0].InstanceUid, page, err)
+		}
 	}
 
 	rules, err := reader.GetRulesHistory(ctx, instances["TestDecision"], "Activity_0xzljrt")
@@ -100,5 +122,31 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if len(rules.Records) != 1 || rules.DMN["Decision_1"] == "" {
 		t.Errorf("rules history = %+v", rules.Records)
+	}
+}
+
+// waitQueue ждёт, пока в очереди не останется задач pending; упавшая задача - ошибка теста
+func waitQueue(t *testing.T, pool *pgxpool.Pool, timeout time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+	for {
+		var pending, failed int
+		err := pool.QueryRow(ctx, `select count(*) filter (where status = 'pending'), count(*) filter (where status = 'failed') from bpm_queue`).Scan(&pending, &failed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if failed > 0 {
+			var lastError string
+			_ = pool.QueryRow(ctx, `select kind || ': ' || coalesce(last_error, '') from bpm_queue where status = 'failed' limit 1`).Scan(&lastError)
+			t.Fatalf("%d failed tasks, first: %s", failed, lastError)
+		}
+		if pending == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d tasks still pending", pending)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

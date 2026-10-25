@@ -19,4 +19,7 @@ type DataModel struct {
 	B string `json:"b"`
 	C string `json:"c"`
 	D string `json:"d"`
+
+	// Approved - решение задачи пользователя Approve в TestUserTask, приходит из формы при завершении задачи
+	Approved bool `json:"approved"`
 }

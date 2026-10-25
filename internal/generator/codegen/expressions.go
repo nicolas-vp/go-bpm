@@ -34,6 +34,13 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes m
 		}
 		expressions[task.Id] = expression
 	}
+	for _, task := range process.UserTasks {
+		expression, err := CreateExpressionFromUserTask(&task, process)
+		if err != nil {
+			return nil, err
+		}
+		expressions[task.Id] = expression
+	}
 	for _, flow := range process.SequenceFlowList {
 		expressions[flow.Id] = CreateExpressionFromSequenceFlow(&flow)
 	}

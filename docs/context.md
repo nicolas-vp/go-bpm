@@ -13,8 +13,8 @@
 | `engine` | Движок: исполняет процессы на очереди задач (бывший `pkg/use_cases` движка pg-bpm) |
 | `queue` | Очередь задач на PostgreSQL, таблица `bpm_queue` (замена внешней библиотеки очереди) |
 | `migrations` | Схема БД: вшитые SQL-файлы и `Up(ctx, pool)` |
-| `httpapi` | JSON API: старт процесса, история экземпляра |
-| `historyview` | Страница `/history/`: диаграмма bpmn-js с пройденными элементами, таблицы DMN |
+| `httpapi` | JSON API: старт процесса, поиск экземпляров, история экземпляра, задачи пользователей |
+| `webui` | Консоль `/ui/`: процессы, запуск, поиск экземпляров, задачи пользователей; история экземпляра `/ui/history/` — диаграмма bpmn-js с пройденными элементами, таблицы DMN (бывший пакет `historyview`) |
 | `cmd/go-bpm-gen` | Генератор Go-кода из BPMN/DMN (бывший `pg-bpm-gen`) |
 | `internal/generator/...` | Внутренности генератора: `codegen` (бывший `queue-generator`), `templates`, `parser`, `models`, `utils`, `file` |
 | `internal/pgtest` | Postgres для интеграционных тестов (`GO_BPM_TEST_DSN`) |
@@ -107,10 +107,12 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 | `intermediateCatchEvent` с таймером | `Timer` | `Expression.Timer`; длительность только `timeDuration` в ISO 8601 (`PT30S`, `PT5M`, `P1DT2H`), без лет и месяцев |
 | `boundaryEvent` таймер или ошибка | `Boundary` | событие — отдельный элемент, по нему токен уходит дальше; у задачи `Expression.Boundaries` (`bpm.Boundary`: тип, `Timer`, `ErrorCode` из `bpmn:error`, пусто — любая ошибка) |
 | `businessRuleTask` (zeebe:calledDecision) | `Method` | `method_<id>.go` вызывает решение и пишет результат в `resultVariable`; решение — `decision_<id решения>.go`, см. «Решения DMN» |
+| `userTask` | `UserTask` | `Expression.UserTask`: название, исполнитель, кандидаты, форма; см. «Задачи пользователей» |
 | `callActivity` (zeebe:calledElement) | `CallActivity` | отдельный экземпляр процесса `ProcessId`, родитель ждёт его End. Дочерний процесс получает копию переменных родителя. При `propagateAllChildVariables` (по умолчанию true) его переменные возвращаются в родителя, при `false` родителю восстанавливаются прежние |
 
 - **Граничные события** поддерживаются только прерывающие и только у `task`, `scriptTask` и `serviceTask`. На остальное генератор падает с понятной ошибкой: `cancelActivity="false"`, `timeDate`/`timeCycle`, message и signal, событие у подпроцесса или callActivity, `errorRef` на несуществующую ошибку, длительность не в ISO (`2s`).
-- **Не считаются методами:** `userTask`, `manualTask`, `sendTask`, `receiveTask`.
+- **Не считаются методами:** `userTask` (ждёт пользователя, см. «Задачи пользователей»), `manualTask`, `sendTask`, `receiveTask`.
+- **Назначение `userTask`** (`codegen/user_tasks.go`): атрибуты Camunda 7 `camunda:assignee`, `camunda:candidateUsers`, `camunda:candidateGroups`, `camunda:formKey`; если их нет — Zeebe `zeebe:assignmentDefinition` и `zeebe:formDefinition` (`formKey` или `formId`). Списки — через запятую. Переменная — `${path}`, `#{path}` или `=path` (путь через точку), в контракте всегда `${path}`; другие выражения (`${a + b}`, FEEL-список `=["a"]`) — ошибка генерации. Переменные назначения не обязаны быть полями `DataModel`: движок читает их из переменных процесса.
 - **Сигнатура метода task:** `func X(ctx context.Context, svc *services.Services, data *model.DataModel) error`.
 - **Сигнатура обработчика jobType:** `func X(ctx context.Context, svc *services.Services, job bpm.Job, data *model.DataModel) error`.
   - Метод меняет `data`. Переменных не из модели метод не видит, но они сохраняются.
@@ -158,8 +160,9 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - `Error{Code, Message}`, `NewError` — бизнес-ошибка для граничного события ошибки; константы переменных `ErrorCodeVariable` (`errorCode`) и `ErrorMessageVariable` (`errorMessage`);
 - `CompleteType`: `Straight`, `Script`; у обоих типов есть `String()`;
 - `Expression`, `DeploymentProcess`, `Process{Flows, BPMN}`, `Queue{TypeID, Retries, Handler}`;
-- `ConditionFunc func(map[string]any) (string, error)`, `MethodFunc func(ctx, map[string]any) (map[string]any, error)`, `HandlerFunc func(ctx, bpm.Job, map[string]any) (map[string]any, error)` — переменные процесса map'ой. `Job`: `InstanceUid`, `ProcessName`, `ElementId`, `JobType`, `Headers`, `LastAttempt`.
+- `ConditionFunc func(map[string]any) (string, error)`, `MethodFunc func(ctx, map[string]any) (map[string]any, error)`, `HandlerFunc func(ctx, bpm.Job, map[string]any) (map[string]any, error)` — переменные процесса map'ой. `Job`: `InstanceUid`, `ProcessName`, `BusinessKey`, `ElementId`, `JobType`, `Headers`, `LastAttempt`.
 - Адаптеры на модели данных `T` (`data.go`): `Condition[T](func(*T) string)`, `Method[S, T](svc S, func(ctx, S, *T) error)`, `Handler[S, T](svc S, func(ctx, S, Job, *T) error)`. Сервисы `S` замыкаются при старте. Переменные → `T` через JSON (поле по тегу `json`), после метода поля `T` пишутся поверх переменных; переменные, которых нет в `T` (например, `errorCode`), сохраняются. Ошибка перевода (строка в поле `int`) — ошибка метода или условия, движок повторяет шаг.
+- `ActivateTypeUserTask`, `Expression.UserTask *UserTask{Name, Assignee, CandidateUsers, CandidateGroups, FormKey}`; значение `${path}` — переменная процесса, остальные — литералы.
 - `Deref[T](*T) T` — значение по указателю или нулевое; им решение DMN читает вход-указатель, у которого проверяется `null`.
 - **Совместимость.** Шаблоны генератора и контракт в одном модуле, поэтому меняются в одном коммите. Но сгенерированный код живёт в сервисах-потребителях: несовместимое изменение типов `bpm` ломает их до перегенерации — после v1 это `/v2`.
 
@@ -171,6 +174,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - **Аренда.** Выдача — `update ... from (select ... for update skip locked)`: `attempt + 1`, `run_at = now() + AttemptTimeout + 10s`. Задачу упавшего воркера по истечении аренды заберёт другой. Если аренду теряли столько раз, что попытки кончились, задача падает (`failed`) без запуска обработчика.
 - **Завершение** (`complete`): в одной tx `update ... set status = 'done' where id = $1 and attempt = $2 and status = 'pending'`, затем колбэки. Первый update блокирует строку, поэтому пока идут колбэки, задачу не возьмёт другой воркер. 0 обновлённых строк — попытка больше не держит задачу (аренду забрали или задачу отменили): tx откатывается, колбэки не выполняются, результат отбрасывается.
 - **Ошибки обработчика:** обычная — повтор с экспоненциальной задержкой и equal jitter (`RetryDelay`, удвоение, не больше `MaxRetryDelay`); `queue.ErrNonRetryable` или последняя попытка — `failed`; `queue.ErrCancel` — `cancelled`; паника — ошибка. Упавший колбэк откатывает завершение — задача повторяется.
+- **`KindOptions.OnFailed(ctx, tx, task)`** выполняется в tx, которая помечает задачу `failed`, в том числе когда попытки кончились из-за потерянной аренды (обработчик тогда не запускается, поэтому колбэк вида, а не задачи). Упавший `OnFailed` откатывается, и задача помечается `failed` без него — иначе она падала бы по кругу. На `cancelled` не вызывается.
 - **Пробуждение.** `PushTx` без задержки делает `pg_notify('bpm_queue', kind)` — уведомление уходит при коммите. Слушатель (`LISTEN` на отдельном соединении, забранном из пула через `Hijack`) будит воркеры вида. Отложенные задачи и повторы берёт опрос раз в `PollInterval` (1s ±25%). После (пере)подключения слушатель один раз будит все виды: уведомления до `LISTEN` теряются.
 - **Остановка.** `Stop` перестаёт выдавать задачи и ждёт, пока воркеры доделают взятые (обработчики получают ctx без отмены, ограничены `AttemptTimeout`).
 - **Очистка:** `done` и `cancelled` старше `Retention` (по умолчанию 7 дней) удаляются пачками по 1000; `failed` хранятся всегда — для разбора.
@@ -178,7 +182,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 
 ## Движок (`engine`)
 
-- **Вход:** `engine.New(queue, engine.Config{...}, bpmgen.Processes(svc), bpmgen.Queues(svc))` до `queue.Start`. `StartProcess(ctx, name, variables map[string]any) (uuid.UUID, error)`; неизвестный процесс — `engine.ErrProcessNotFound`. Id экземпляров — UUID v7.
+- **Вход:** `engine.New(queue, engine.Config{...}, bpmgen.Processes(svc), bpmgen.Queues(svc))` до `queue.Start`. `StartProcess(ctx, name, variables map[string]any, opts ...StartOption) (uuid.UUID, error)`, опция `engine.WithBusinessKey(key)`; неизвестный процесс — `engine.ErrProcessNotFound`. Id экземпляров — UUID v7. Опции пишут в экспортированную `StartOptions` (`ApplyStartOptions`), чтобы их мог разобрать фейк движка в тестах `httpapi`.
   - Flow всех процессов сливаются в одну map; дубликат id flow — ошибка.
   - Очереди уже объединены генератором; повтор `TypeID` в `Queues` — ошибка (`sortedQueues`).
 - **Виды задач** — строки: системная очередь `<KindPrefix>.system` (старты, шаги, таймеры), service task — `<KindPrefix>.task.<jobType>`. `KindPrefix` по умолчанию `bpm`; разные префиксы разводят по одной базе экземпляры с разным кодом процессов (раньше для этого собирали второй бинарник с другим `int16`-kind через `-overlay`).
@@ -206,38 +210,71 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
   - На экран история выводится строкой в stdout. В базу `writeHistoryDB` пишет в `bpm_history` в tx шага, поэтому история атомарна с переходом токена.
   - Переменные пишутся только для старта процесса (StartElement любого flow, в том числе встроенного подпроцесса и процесса callActivity) и задач: `Method`, `Queue`, `CallActivity`, а также граничных событий — там видны `errorCode` и `errorMessage` (`recordsVariables`). У остальных записей `variables` NULL, чтобы история не росла снимком на каждый sequence flow.
   - Вывод на экран при откате шага не отменяется, поэтому при повторе задачи строки могут задвоиться.
+- **Экземпляры** (`instances.go`, таблица `bpm_process_instance`): id, тип (`process_name` — id процесса в BPMN, у встроенного подпроцесса `<процесс>.<подпроцесс>`), `business_key`, `parent_instance_uid`, `status`, `created_at`, `updated_at`.
+  - Пишутся вместе с историей, только при `History.ToDB`, в tx шага. Строка появляется, когда токен входит в стартовое событие: корневой экземпляр (`startRoot`), встроенный подпроцесс и callActivity (`startChildProcess`), `StartNewProcess`. У экземпляров, начатых при выключенном `ToDB`, строки нет.
+  - Статусы: `running` → `completed` на End event экземпляра; `failed` — по `OnFailed` очереди: упал шаг системной очереди или service task. Падает экземпляр задачи и все его предки по `ParentProcess` (они ждут End, которого не будет); строка вставляется, если её нет (упал сам старт). `failed` не перезаписывается в `completed`: токенов движок не считает, поэтому до End могла дойти другая параллельная ветка — по той же причине несведённые параллельные ветки до разных End дают `completed` на первом.
+  - `updated_at` обновляется с каждой записью истории (`touchInstanceQuery` в `writeHistoryDB`) и при смене статуса.
+  - Бизнес-ключ — свободный текст из старта, наследуется дочерними экземплярами (в `instanceMessage.BusinessKey`) и передаётся обработчикам в `bpm.Job`. Индекса по нему нет.
+  - Индексы `(status, process_name, instance_uid)` и `(process_name, instance_uid)`: поиск по статусу, по статусу и типу, по типу. Выборка — от новых к старым по `instance_uid` (UUID v7 растёт со временем), страница — `Before`.
+  - Чтение: `HistoryReader.GetInstance(id)` (нет — `ErrInstanceNotFound`), `ListInstances(InstanceFilter{ProcessName, Status, BusinessKey, Before, Limit})` (по умолчанию 100, не больше 1000; неизвестный статус — `ErrInvalidStatus`). Условия собираются из заданных полей, а не `$1 = '' or ...`, чтобы планировщик брал индексы.
+- **Задачи пользователей** (`user_tasks.go`, таблица `bpm_user_task`), как в Camunda 7:
+  - Токен приходит в `userTask` → `activateUserTask` подставляет переменные назначения (строка или список строк), вставляет строку с токеном (`message`) и пишет `activated`.
+  - **Назначение, которое не вычислилось** (переменной нет, не строка, у исполнителя несколько значений), пропускается с предупреждением `user task assignment skipped` в логе. Раньше это была ошибка шага, и экземпляр застревал навсегда: шаг повторялся с той же ошибкой до `failed`, а `Complete` прошлой задачи уже ответил успехом, и её исполнитель ошибки не видел (так было с демо, запущенным без `initiator`). Теперь задача без исполнителя попадает к кандидатам, а без кандидатов — в очередь всех. Таблица пишется всегда, не зависит от `History.ToDB`: это состояние процесса, а не история.
+  - `engine.NewUserTaskService(pool, engine)`: `ListTasks(TaskFilter)`, `GetTask(id)` (с переменными процесса на момент создания — данные для формы), `Claim(id, user, groups)`, `Unclaim(id, user)`, `Complete(id, user, variables)`. Каждое действие — tx с `select ... for update` строки задачи.
+  - **Очередь:** задача с `assignee` — личная; без него её видят и могут взять кандидаты: пользователь из `candidate_users` или участник группы из `candidate_groups`. Задачу без кандидатов и исполнителя может взять любой. Группы пользователя передаёт вызывающий (в движке нет пользователей и авторизации). В `TaskFilter` `Assignee` и `CandidateUser`/`CandidateGroups` объединяются через «или» — «мои и доступные мне», кандидаты — только среди задач без исполнителя. Задачи без исполнителя и кандидатов входят в очередь любого кандидата: их может взять любой.
+  - **Правила:** `Claim` чужой взятой задачи — `ErrTaskClaimed`, не кандидат — `ErrNotCandidate`, повторный `Claim` своей — ничего; `Unclaim` и `Complete` — только исполнитель (`ErrNotAssignee`), поэтому задачу кандидатов сначала берут в работу. Строже, чем `TaskService.complete` Camunda 7, который исполнителя не проверяет. Завершённая — `ErrTaskCompleted`.
+  - **Завершение:** в одной tx задача помечается `completed` (`completed_by`, `completed_at`), переменные формы добавляются к переменным токена, и ставится системная задача `_system.userTask` с ключом task_uid. Токен дальше ведёт очередь: ошибка следующих шагов (упавший метод) повторяется очередью, а не возвращается в API. Завершённые задачи не удаляются.
+  - Статус в фильтре — литерал в SQL, а не параметр: частичные индексы открытых задач (`where status = 'created'`) не подходят к общему плану prepared statement. Индексы: `assignee`, GIN по `candidate_users` и `candidate_groups`, `process_name` — по открытым; `instance_uid` — по всем.
 - **История бизнес-правил** (`rules_history.go`): `activateMethod` кладёт в ctx метода `decisionRecorder`, который копит вызовы `bpm.RecordDecision`. Пишутся они (`logDecisions`) только после успешного метода, в tx шага: если метод упал или его прервал граничный таймер, правил в истории нет.
   - На экран: строка `rules history: process=... instance=... element=... decision=... rules=[...] result=...`.
   - В базу: `bpm_rules_history` (`rule_ids jsonb` — массив id правил, `result jsonb`; индекс `(instance_uid, element_id, id)`).
-- **Чтение истории:** `engine.NewHistoryReader(pool, processes, bpmgen.Decisions)` — `GetHistory(id, withChildren)`, `GetDiagram(id)`, `GetRulesHistory(id, elementId)`. Читает через интерфейс `Querier` (`*pgxpool.Pool` подходит).
+- **Чтение истории:** `engine.NewHistoryReader(pool, processes, bpmgen.Decisions)` — `GetHistory(id, withChildren)`, `GetDiagram(id)`, `GetRulesHistory(id, elementId)`, `GetInstance(id)`, `ListInstances(filter)`. Читает через интерфейс `Querier` (`*pgxpool.Pool` подходит).
 
 ## Схема БД (`migrations`)
 
-- Одна начальная миграция `0001_init.sql`: `bpm_queue`, `bpm_parallel_sync`, `bpm_wait`, `bpm_history`, `bpm_rules_history`. Девять goose-миграций pg-bpm схлопнуты: у нового продукта нет баз, которые нужно мигрировать. `rules_history` переименована в `bpm_rules_history`, префикс `public.` убран из запросов — работает `search_path`.
+- Начальная миграция `0001_init.sql`: `bpm_queue`, `bpm_parallel_sync`, `bpm_wait`, `bpm_history`, `bpm_rules_history`; `0002_process_instances.sql` — `bpm_process_instance`; `0003_user_tasks.sql` — `bpm_user_task`; `0004_user_tasks_open_to_all.sql` — частичный индекс открытых задач без кандидатов. Девять goose-миграций pg-bpm схлопнуты: у нового продукта нет баз, которые нужно мигрировать. `rules_history` переименована в `bpm_rules_history`, префикс `public.` убран из запросов — работает `search_path`.
 - `migrations.Up(ctx, pool)` применяет недостающие миграции под `pg_advisory_lock` (поды стартуют одновременно), каждую в своей tx, версии — в `bpm_schema_migrations`. Выпущенный файл не меняют: изменение схемы — новый `NNNN_<имя>.sql`.
 - Сервис, у которого свой инструмент миграций, может взять SQL через `migrations.List()` и не вызывать `Up`.
 
-## API и страница истории
+## API, консоль и страница истории
 
 - **`httpapi.Register(mux, engine, historyReader)`:**
-  - `POST /api/v1/processes/{name}/instances` с телом `{"variables": {...}}` → `201 {"id": "..."}`; неизвестный процесс — 404. Переменные — любые JSON-значения (в gRPC были только строки).
+  - `GET /api/v1/processes` → `{"processes": [{"id", "name", "instances": {"running": n, ...}}]}` — корневые процессы движка (`Engine.Processes()`, название из атрибута `name` процесса в BPMN, разбирается в `engine.New`) с числом экземпляров по статусам (`HistoryReader.CountInstances`, `group by` по `bpm_process_instance`);
+  - `GET /api/v1/processes/{name}` → процесс с `bpmn`; нет — 404;
+  - `POST /api/v1/processes/{name}/instances` с телом `{"variables": {...}, "businessKey": "..."}` (ключ необязателен) → `201 {"id": "..."}`; неизвестный процесс — 404. Переменные — любые JSON-значения (в gRPC были только строки).
+  - `GET /api/v1/instances?processName=&status=&businessKey=&limit=&before=` → `{"instances": [...]}` (пустой список — `[]`); неверные `status`, `limit`, `before` — 400.
+  - `GET /api/v1/instances/{id}` → экземпляр; нет строки — 404.
+- **`httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, engine))`** — отдельно от `Register`, сервису без задач пользователей не нужен:
+  - `GET /api/v1/tasks?assignee=&candidateUser=&candidateGroup=&processName=&instanceId=&businessKey=&status=&limit=&before=` → `{"tasks": [...]}`; `candidateGroup` можно повторять или писать через запятую, `status` — `created` (по умолчанию) или `completed`;
+  - `GET /api/v1/tasks/{id}` → задача с `variables`;
+  - `POST /api/v1/tasks/{id}/claim` `{"userId", "groups"}`, `/unclaim` `{"userId"}`, `/complete` `{"userId", "variables"}` → 204;
+  - ошибки: 400 — неверный запрос или нет `userId`, 403 — не кандидат, 404 — нет задачи, 409 — завершена, взята другим или не назначена пользователю.
   - `GET /api/v1/instances/{id}/history?withChildren=true` → `{"records": [...]}`; нет записей — 404.
-- **`historyview.Register(mux, historyReader)`** — `/history/?instanceId=<id>`:
-  - bpmn-js 18.31.0 и dmn-js 17.12.0 вшиты через `go:embed` в `historyview/static/vendor/<библиотека>-<версия>` (с LICENSE). Логотип bpmn.io по лицензии не скрывать. Файлы `vendor/` кэшируются надолго, страница и `app.js` — `no-cache`.
-  - `GET /history/api/diagram?instanceId=` → `engine.Diagram`: BPMN процесса и записи экземпляра с его встроенными подпроцессами. Экземпляры callActivity нарисованы в своих BPMN и не входят.
+- **История экземпляра** — `/ui/history/?instanceId=<id>` (`webui/static/history.*`, обработчики в `webui/history.go`). Раньше жила в пакете `historyview` на `/history/`; пакет влит в `webui`, чтобы история была частью консоли с той же шапкой. Старые адреса `/history/...` перенаправляются (301) на `/ui/history/` с теми же параметрами.
+  - Шапка — как у консоли, подсвечена вкладка «Экземпляры». Поиска по id нет: экземпляр приходит в адресе из списка «Экземпляры», ссылок консоли и переходов в подпроцесс; без `instanceId` страница ссылается на список. Страница подключает общий `style.css` консоли, затем `history.css` — раскладку на всю высоту, диаграмму, панель и окно правил, и переопределения общих правил, которые ей мешают (`main` консоли ограничен по ширине, а здесь `main` — холст диаграммы).
+  - bpmn-js 18.31.0 и dmn-js 17.12.0 вшиты через `go:embed` в `webui/static/vendor/<библиотека>-<версия>` (с LICENSE), ими пользуются и история, и схемы процессов консоли. Логотип bpmn.io по лицензии не скрывать. Файлы `vendor/` кэшируются надолго, страницы и их скрипты — `no-cache`.
+  - `GET /ui/history/api/diagram?instanceId=` → `engine.Diagram`: BPMN процесса и записи экземпляра с его встроенными подпроцессами. Экземпляры callActivity нарисованы в своих BPMN и не входят.
   - Маркер элемента — по его последнему событию: `completed` закрашивается, `activated` обводится пунктиром, `terminated` — красной рамкой.
   - Клик по элементу открывает боковую панель: проходы элемента с переменными и вызванные экземпляры callActivity. Выбранный элемент сохраняется в адресе как `&element=<id>`. Двойной клик по callActivity с одним вызванным экземпляром открывает его, у дочернего экземпляра сверху ссылка на родителя; переходы через `history.pushState`.
-  - У Business Rule Task кнопка «Показать сработавшие правила» (`GET /history/api/rules?instanceId=&elementId=`): окно с таблицей решения, строки сработавших правил подсвечиваются по `data-row-id`; несколько вызовов переключаются кнопками.
+  - У User Task блок «Назначение» (`GET /ui/history/api/tasks?instanceId=&elementId=` → `HistoryReader.GetUserTasks`): задача на каждый приход токена — статус (ждёт исполнителя, в работе, выполнена), когда создана, исполнитель и время назначения (`claimed_at`; у задачи, назначенной при создании, — время создания), кто может взять (кандидаты; без них — любой пользователь или только исполнитель), кто и когда выполнил, форма. Как и правила, задачи берутся по всем экземплярам элемента на диаграмме. Истории взятий и возвратов нет: после `unclaim` прежний исполнитель не виден.
+  - У Business Rule Task кнопка «Показать сработавшие правила» (`GET /ui/history/api/rules?instanceId=&elementId=`): окно с таблицей решения, строки сработавших правил подсвечиваются по `data-row-id`; несколько вызовов переключаются кнопками.
+- **`webui.Register(mux, historyReader)`** — консоль `/ui/` и история `/ui/history/` (статика через `go:embed`, чистый JS без сборки). Консоль работает поверх `httpapi` (`Register` и `RegisterUserTasks`), поэтому они на том же mux. Ссылки меню абсолютные (`/ui/#/processes`), одинаковые на обеих страницах. В демо `/` ведёт на `/ui/`.
+  - Вкладка и фильтры — в адресе после `#`: `#/processes`, `#/start?process=X`, `#/instances?process=X&status=failed&key=K`, `#/tasks?user=bob&groups=managers,admins`. Ссылку на отфильтрованный список можно передать, «назад» в браузере работает.
+  - **Процессы:** список с числом выполняющихся, завершённых и упавших экземпляров (число — ссылка на отфильтрованный список), схема процесса, переход к запуску.
+  - **Запуск:** процесс, бизнес-ключ, переменные строками «имя, тип (строка, число, да/нет, JSON), значение» или одним JSON-объектом.
+  - **Экземпляры:** фильтры процесса, статуса и бизнес-ключа, страницы по 20 через курсор `before` (запрос `limit = 21`: лишний говорит, что есть следующая страница; курсоры прежних страниц хранятся для «Новее»). Строка ведёт в историю. Id показывается хвостом: начало UUID v7 — время, у запущенных подряд оно совпадает.
+  - **Задачи:** пользователь и группы — текстом (последние запоминаются в `localStorage`), «Мои задачи» (`assignee`) и «Можно взять» (кандидаты), кнопки взять, вернуть, выполнить. Очередь показывается и по одним группам, без пользователя: тогда нет «Моих задач», а «Взять» выключена — взять задачу может только пользователь. Выполнение — окно с переменными процесса и редактором результата; через секунду список обновляется ещё раз — следующую задачу создаёт очередь.
+  - Проверялась headless Chrome через chromedp (скрипт вне репозитория): все вкладки, схема, запуск, взять и выполнить задачу, страницы списка, переход в историю, ширина телефона.
 - Раньше API и страница жили на двух портах (public 7000 и admin 7001); теперь всё на одном `http.ServeMux`, порт выбирает сервис (демо — `:8080`).
 
 ## Тесты
 
 - `make test` — всё, включая интеграционные тесты на Postgres из `GO_BPM_TEST_DSN` (база очищается!). Пакеты гоняются по одному (`-p 1`): тесты с базой делят таблицы. `make test-unit` — без базы, интеграционные пропускаются.
-- `engine`: фейковая очередь и фейковые tx (`process_test.go`, `timers_test.go`, `decision_test.go`, `history_test.go`, `call_activity_test.go`); `TestEndToEnd` (`e2e_test.go`) — все демо-процессы на настоящей очереди и базе до End event, с чтением истории, диаграмм и правил.
+- `engine`: фейковая очередь и фейковые tx (`process_test.go`, `timers_test.go`, `decision_test.go`, `history_test.go`, `call_activity_test.go`, `instances_test.go`, `user_tasks_test.go`); `TestEndToEnd` (`e2e_test.go`) — все демо-процессы на настоящей очереди и базе до End event, с чтением истории, диаграмм, правил и экземпляров (статус `completed`, бизнес-ключ у дочерних). `TestUserTask` в нём пропускается: его проходит `TestUserTasks` (`user_tasks_e2e_test.go`) — очередь группы, claim/unclaim/complete и ошибки, исправление инициатором, End.
   - `timers_test.go`: таймеры без ожидания — тест сам достаёт задачу таймера из фейковой очереди и вызывает `fireTimer`; `fakeWaitTx` эмулирует `bpm_wait`.
   - Логика обработчиков тестируется через `runHandler`, ошибки — через `taskErrorStep`, который возвращает шаг для `OnSucceeded`.
-- `queue`: интеграционные — колбэк в tx завершения, NOTIFY, ключ идемпотентности, повторы, `ErrNonRetryable`/`ErrCancel`/паника, упавший колбэк, задержка, отмена во время выполнения.
-- `httpapi`, `historyview` — через `httptest`; генератор — юнит-тесты `codegen` и `utils`.
+- `queue`: интеграционные — колбэк в tx завершения, `OnFailed`, NOTIFY, ключ идемпотентности, повторы, `ErrNonRetryable`/`ErrCancel`/паника, упавший колбэк, задержка, отмена во время выполнения.
+- `httpapi`, `webui` — через `httptest` (у `webui` раздача страниц, API истории и перенаправления, JS тестами не покрыт); генератор — юнит-тесты `codegen` и `utils`.
 - Демо-процесс `testTimerAndException.bpmn` управляется переменными: `sleep1` (секунд у «это 1», таймер 2s), `fail2`, `sleep4` (у service task «это 4», таймер 1s), `fail5`. Методы и обработчики демо — заглушки, а в `DataModel` этих полей нет: логику нужно вернуть вместе с полями.
 
 ## Окружение
@@ -248,12 +285,12 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 
 ## Откуда пришли
 
-pg-bpm — три отдельных модуля: `pg-bpm-lib` (→ `bpm`), `pb-bpm-gen` (→ `cmd/go-bpm-gen` + `internal/generator`), `pg-bpm` (→ `engine`, `historyview`, демо). Что заменено при переезде:
+pg-bpm — три отдельных модуля: `pg-bpm-lib` (→ `bpm`), `pb-bpm-gen` (→ `cmd/go-bpm-gen` + `internal/generator`), `pg-bpm` (→ `engine`, страница истории — теперь в `webui`, демо). Что заменено при переезде:
 
 | Было | Стало |
 |---|---|
 | внешняя библиотека очереди, kind `int16` из хеша jobType | `queue`, виды-строки `<prefix>.task.<jobType>` |
-| gRPC + grpc-gateway, admin-роутер chi | `httpapi` и `historyview` на `net/http` |
+| gRPC + grpc-gateway, admin-роутер chi | `httpapi` и `webui` на `net/http` |
 | корпоративный логгер | `log/slog` |
 | realtime config, Vault, k8s values | `HistoryConfig` — функции; в демо флаги и переменные окружения |
 | корпоративная обёртка над Postgres и её tx | `pgxpool`, `queue.Tx` (подходит `pgx.Tx`) |
@@ -262,6 +299,7 @@ pg-bpm — три отдельных модуля: `pg-bpm-lib` (→ `bpm`), `pb
 
 ## Открытые задачи
 
+- Задачи пользователей, не сделано: граничные события у `userTask` (таймер эскалации), делегирование и смена исполнителя администратором, `dueDate`/`priority`, отмена открытых задач, когда экземпляр падает. Пользователь и его группы приходят в запросе — авторизацию делает сервис.
 - Таймеры и ошибки, не сделано: непрерывающие события, `timeDate`/`timeCycle`, граничные события у подпроцесса и callActivity, всплытие непойманной `bpm.Error` к родителю.
 - DMN, не сделано: зависимые решения (`requiredDecision`), literal expression, `PRIORITY`/`OUTPUT ORDER`, FEEL-функции, проверка пересечений у `UNIQUE`. В истории правил нет значений входов таблицы. Окно правил не открывается ссылкой (`?element=` открывает только панель).
 - Реализовать рукописные методы `test_bpm_process` и обработчик `handlers/do_some_async.go` в демо (сейчас заглушки с TODO).

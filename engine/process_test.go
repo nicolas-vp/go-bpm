@@ -124,17 +124,17 @@ func newTestServiceFromProcesses(t *testing.T, processes map[string]bpm.Process,
 	return service, queue
 }
 
-func startAndActivate(t *testing.T, s *Engine, q *fakeQueue, tx queue.Tx, processName string, variables map[string]any) {
+func startAndActivate(t *testing.T, s *Engine, q *fakeQueue, tx queue.Tx, processName string, variables map[string]any, opts ...StartOption) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := s.StartProcess(ctx, processName, variables); err != nil {
+	if _, err := s.StartProcess(ctx, processName, variables, opts...); err != nil {
 		t.Fatal(err)
 	}
 	var st systemTask
 	if err := json.Unmarshal(q.pop(t).Payload, &st); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveActivate); err != nil {
+	if err := s.startRoot(ctx, tx, st.Message); err != nil {
 		t.Fatal(err)
 	}
 }

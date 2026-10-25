@@ -43,6 +43,7 @@ func runHandler(ctx context.Context, handler bpm.HandlerFunc, jobType string, me
 	job := bpm.Job{
 		InstanceUid: message.InstanceUid.String(),
 		ProcessName: message.ProcessName,
+		BusinessKey: message.BusinessKey,
 		ElementId:   message.CurrentPosition,
 		JobType:     jobType,
 		Headers:     message.Headers,

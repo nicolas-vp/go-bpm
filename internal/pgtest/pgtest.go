@@ -31,7 +31,7 @@ func Pool(t *testing.T) *pgxpool.Pool {
 	if err := migrations.Up(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	_, err = pool.Exec(ctx, `truncate bpm_queue, bpm_parallel_sync, bpm_wait, bpm_history, bpm_rules_history restart identity`)
+	_, err = pool.Exec(ctx, `truncate bpm_queue, bpm_parallel_sync, bpm_wait, bpm_history, bpm_rules_history, bpm_process_instance, bpm_user_task restart identity`)
 	if err != nil {
 		t.Fatal(err)
 	}

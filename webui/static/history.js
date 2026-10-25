@@ -5,8 +5,6 @@
 (function () {
   'use strict';
 
-  var form = document.getElementById('instance-form');
-  var input = document.getElementById('instance-id');
   var info = document.getElementById('info');
   var parentBox = document.getElementById('parent');
   var errorBox = document.getElementById('error');
@@ -33,19 +31,10 @@
   // текущая диаграмма: записи и дочерние экземпляры по id элемента
   var state = { data: null, recordsByElement: {}, childrenByElement: {}, selected: null };
 
-  form.addEventListener('submit', function (event) {
-    event.preventDefault();
-    var instanceId = input.value.trim();
-    if (instanceId) {
-      navigate(instanceId);
-    }
-  });
-
   // переходы между экземплярами без перезагрузки, с записью в историю браузера
   window.addEventListener('popstate', function () {
     var instanceId = currentInstanceId();
     if (instanceId) {
-      input.value = instanceId;
       show(instanceId);
     }
   });
@@ -77,9 +66,9 @@
     }
   });
 
+  // экземпляр приходит в адресе (?instanceId=) из списка экземпляров консоли
   var initial = currentInstanceId();
   if (initial) {
-    input.value = initial;
     show(initial);
   }
 
@@ -92,7 +81,6 @@
     url.searchParams.set('instanceId', instanceId);
     url.searchParams.delete('element');
     window.history.pushState(null, '', url);
-    input.value = instanceId;
     show(instanceId);
   }
 
@@ -248,6 +236,12 @@
       });
       nodes.push(rulesButton);
     }
+    if (element.type === 'bpmn:UserTask') {
+      nodes.push(el('h2', 'Назначение'));
+      var assignment = el('div', 'Загрузка…', 'muted');
+      nodes.push(assignment);
+      showAssignment(element, assignment);
+    }
 
     var records = state.recordsByElement[element.id] || [];
     nodes.push(el('h2', 'Проходы'));
@@ -275,6 +269,87 @@
 
     panelBody.replaceChildren.apply(panelBody, nodes);
     setPanelVisible(true);
+  }
+
+  var taskStatuses = { created: 'ждёт исполнителя', claimed: 'в работе', completed: 'выполнена' };
+
+  // showAssignment заполняет box задачами пользователя элемента: кому и когда назначена, кто может взять, кто выполнил.
+  // Задача встроенного подпроцесса выполняется в его экземпляре, поэтому задачи берутся по всем экземплярам элемента
+  async function showAssignment(element, box) {
+    var instances = new Set((state.recordsByElement[element.id] || []).map(function (r) { return r.instance_uid; }));
+    if (!instances.size) {
+      box.textContent = 'Задача не создавалась';
+      return;
+    }
+    var tasks = [];
+    try {
+      var responses = await Promise.all(Array.from(instances).map(async function (instanceId) {
+        var resp = await fetch('api/tasks?instanceId=' + encodeURIComponent(instanceId) +
+          '&elementId=' + encodeURIComponent(element.id));
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) {
+          throw new Error(data.error || resp.status + ' ' + resp.statusText);
+        }
+        return data;
+      }));
+      responses.forEach(function (data) { tasks = tasks.concat(data.tasks || []); });
+    } catch (err) {
+      box.textContent = 'Не удалось загрузить задачи: ' + err.message;
+      box.className = 'error';
+      return;
+    }
+    if (!tasks.length) {
+      box.textContent = 'Задача не создавалась';
+      return;
+    }
+    // task_uid - UUID v7: порядок строк - порядок создания задач
+    tasks.sort(function (a, b) { return a.task_uid < b.task_uid ? -1 : 1; });
+    var cards = tasks.map(function (task, index) {
+      var status = task.status === 'created' && task.assignee ? 'claimed' : task.status;
+      var rows = [
+        ['Исполнитель', task.assignee || 'не назначена'],
+        ['Назначена', task.claimed_at ? formatTime(task.claimed_at) : '—'],
+        ['Может взять', candidates(task)],
+      ];
+      if (task.status === 'completed') {
+        rows.push(['Выполнил', task.completed_by + ' · ' + formatTime(task.completed_at)]);
+      }
+      if (task.form_key) {
+        rows.push(['Форма', task.form_key]);
+      }
+      if (instances.size > 1) {
+        rows.push(['Экземпляр', task.process_name + ' · ' + shortId(task.instance_uid)]);
+      }
+      var list = el('dl', null, 'assign');
+      rows.forEach(function (row) {
+        list.appendChild(el('dt', row[0]));
+        list.appendChild(el('dd', row[1]));
+      });
+      return el('div', null, 'pass', [
+        el('div', null, 'pass-head', [
+          el('span', (tasks.length > 1 ? '#' + (index + 1) + ' · ' : '') + (taskStatuses[status] || status), 'pass-event'),
+          el('span', 'создана ' + formatTime(task.created_at), 'pass-time'),
+        ]),
+        list,
+      ]);
+    });
+    box.className = '';
+    box.replaceChildren.apply(box, cards);
+  }
+
+  // candidates - кто может взять задачу; без кандидатов - только исполнитель, а без него - любой пользователь
+  function candidates(task) {
+    var parts = [];
+    if (task.candidate_users && task.candidate_users.length) {
+      parts.push('пользователи: ' + task.candidate_users.join(', '));
+    }
+    if (task.candidate_groups && task.candidate_groups.length) {
+      parts.push('группы: ' + task.candidate_groups.join(', '));
+    }
+    if (!parts.length) {
+      return task.assignee ? 'только исполнитель' : 'любой пользователь';
+    }
+    return parts.join('; ');
   }
 
   // subInstances - экземпляры, запущенные элементом: callActivity (children из API) и встроенного подпроцесса.
@@ -486,8 +561,9 @@
     return a;
   }
 
+  // shortId - хвост id: начало UUID v7 - время, у родителя и подпроцесса оно совпадает
   function shortId(id) {
-    return String(id).slice(0, 8);
+    return '…' + String(id).slice(-12);
   }
 
   function formatTime(value) {

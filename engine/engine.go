@@ -64,9 +64,11 @@ type Engine struct {
 	queue Queue
 	// deployment - flow всех процессов и подпроцессов по id
 	deployment map[string]bpm.DeploymentProcess
-	systemKind string
-	taskKinds  map[string]string
-	history    HistoryConfig
+	// definitions - корневые процессы с названиями и BPMN, по id
+	definitions []ProcessDefinition
+	systemKind  string
+	taskKinds   map[string]string
+	history     HistoryConfig
 	// rulesHistory - куда писать историю бизнес-правил: сработавшие правила решений DMN
 	rulesHistory HistoryConfig
 	// historyOut - куда выводится история на экран
@@ -87,10 +89,15 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 	if err != nil {
 		return nil, err
 	}
+	definitions, err := catalog(processes)
+	if err != nil {
+		return nil, err
+	}
 
 	s := &Engine{
 		queue:        q,
 		deployment:   deployment,
+		definitions:  definitions,
 		systemKind:   config.KindPrefix + ".system",
 		taskKinds:    make(map[string]string, len(queues)),
 		history:      config.History,
@@ -104,6 +111,7 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 		AttemptTimeout: config.AttemptTimeout,
 		RetryDelay:     config.RetryDelay,
 		Workers:        config.SystemWorkers,
+		OnFailed:       s.systemTaskFailed,
 	})
 	for _, taskQueue := range queues {
 		kind := config.KindPrefix + ".task." + taskQueue.TypeID
@@ -116,6 +124,7 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 			AttemptTimeout: config.AttemptTimeout,
 			RetryDelay:     config.RetryDelay,
 			Workers:        config.TaskWorkers,
+			OnFailed:       s.serviceTaskFailed,
 		})
 	}
 	return s, nil
@@ -146,8 +155,33 @@ func withDefaults(config Config) Config {
 	return config
 }
 
+// StartOptions - параметры старта экземпляра процесса, задаются через StartOption
+type StartOptions struct {
+	// BusinessKey - текст, по которому экземпляр связан с объектом сервиса (заявкой, договором).
+	// Хранится в bpm_process_instance, наследуется дочерними экземплярами и виден обработчикам в bpm.Job
+	BusinessKey string
+}
+
+type StartOption func(*StartOptions)
+
+// WithBusinessKey задаёт бизнес-ключ экземпляра
+func WithBusinessKey(businessKey string) StartOption {
+	return func(opts *StartOptions) {
+		opts.BusinessKey = businessKey
+	}
+}
+
+// ApplyStartOptions собирает параметры старта из опций
+func ApplyStartOptions(opts ...StartOption) StartOptions {
+	var options StartOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	return options
+}
+
 // StartProcess запускает экземпляр процесса processName с переменными variables и возвращает его id
-func (s *Engine) StartProcess(ctx context.Context, processName string, variables map[string]any) (uuid.UUID, error) {
+func (s *Engine) StartProcess(ctx context.Context, processName string, variables map[string]any, opts ...StartOption) (uuid.UUID, error) {
 	process, err := s.getProcess(processName)
 	if err != nil {
 		return uuid.Nil, err
@@ -161,6 +195,7 @@ func (s *Engine) StartProcess(ctx context.Context, processName string, variables
 	message := &instanceMessage{
 		InstanceUid:     instanceUid,
 		ProcessName:     processName,
+		BusinessKey:     ApplyStartOptions(opts...).BusinessKey,
 		CurrentPosition: process.StartElement,
 		Variables:       variables,
 	}

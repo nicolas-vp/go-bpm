@@ -87,12 +87,12 @@ func (s *Engine) logHistory(ctx context.Context, tx queue.Tx, event string, mess
 }
 
 // recordsVariables - пишутся ли переменные для записи элемента: старт процесса (в том числе встроенного подпроцесса
-// и процесса callActivity), задачи: task и scriptTask (Method), service task (Queue), callActivity,
-// и граничные события - по ним видно errorCode и errorMessage ошибки задачи.
+// и процесса callActivity), задачи: task и scriptTask (Method), service task (Queue), callActivity, userTask
+// (по завершению видны переменные из формы), и граничные события - по ним видно errorCode и errorMessage ошибки задачи.
 // Переходы, шлюзы и остальные события без переменных, чтобы история не росла снимком на каждый sequence flow
 func (s *Engine) recordsVariables(message *instanceMessage, expression *bpm.Expression) bool {
 	switch expression.ActivateType {
-	case bpm.ActivateTypeMethod, bpm.ActivateTypeQueue, bpm.ActivateTypeCallActivity, bpm.ActivateTypeBoundary:
+	case bpm.ActivateTypeMethod, bpm.ActivateTypeQueue, bpm.ActivateTypeCallActivity, bpm.ActivateTypeBoundary, bpm.ActivateTypeUserTask:
 		return true
 	}
 	process, err := s.getProcess(message.ProcessName)
@@ -133,6 +133,9 @@ func (s *Engine) writeHistoryDB(ctx context.Context, tx queue.Tx, record History
 	if _, err := tx.Exec(ctx, insertHistoryQuery, record.ProcessName, record.InstanceUid, record.ParentInstanceUid,
 		record.ParentElementId, record.ElementId, record.Event, variables, record.CreatedAt); err != nil {
 		return fmt.Errorf("history: insert: %w", err)
+	}
+	if _, err := tx.Exec(ctx, touchInstanceQuery, record.InstanceUid); err != nil {
+		return fmt.Errorf("history: touch instance: %w", err)
 	}
 	return nil
 }

@@ -6,7 +6,9 @@ BPM-движок на PostgreSQL для Go-сервисов. Процессы р
 - Каждый шаг процесса — задача очереди; все его эффекты пишутся в одной транзакции с её завершением.
 - Service task, задачи и скрипты, шлюзы (exclusive, parallel), подпроцессы и callActivity, таймеры, граничные события
   таймера и ошибки, решения DMN — сразу в Go, без интерпретатора выражений в рантайме.
-- История экземпляров в базе и страница `/history/` с диаграммой bpmn-js и сработавшими правилами DMN.
+- Задачи пользователей как в Camunda 7: исполнитель, кандидаты-пользователи и группы, очередь, взять в работу и выполнить через API.
+- Экземпляры со статусом и бизнес-ключом, история в базе, консоль `/ui/`: процессы, запуск, поиск экземпляров, задачи
+  и история экземпляра с диаграммой bpmn-js и сработавшими правилами DMN.
 - Зависимости: `pgx/v5`, `google/uuid`, `golang.org/x/tools` (генератор).
 
 ## Встроить в сервис
@@ -35,8 +37,9 @@ e, _ := engine.New(q, engine.Config{}, bpmgen.Processes(svc), bpmgen.Queues(svc)
 history := engine.NewHistoryReader(pool, bpmgen.Processes(svc), bpmgen.Decisions)
 
 mux := http.NewServeMux()
-httpapi.Register(mux, e, history)     // POST /api/v1/processes/{name}/instances, GET /api/v1/instances/{id}/history
-historyview.Register(mux, history)    // /history/?instanceId=<id>
+httpapi.Register(mux, e, history)                                // /api/v1/processes, /api/v1/instances
+httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, e)) // /api/v1/tasks
+webui.Register(mux, history)                                     // /ui/ - консоль, /ui/history/?instanceId=<id> - история
 
 q.Start(ctx)
 defer q.Stop()
@@ -50,9 +53,9 @@ service task `internal/bpmgen/handlers` и методы задач `method_<id>.
 
 ```sh
 createdb go_bpm
-make run    # examples/demo, http://localhost:8080
+make run    # examples/demo, консоль http://localhost:8080/ui/
 curl -XPOST localhost:8080/api/v1/processes/TestDecision/instances -d '{"variables":{"a":"some","b":"x"}}'
-open "http://localhost:8080/history/?instanceId=<id>"
+open "http://localhost:8080/ui/history/?instanceId=<id>"
 ```
 
 ## Разработка
@@ -70,6 +73,6 @@ make lint
 | `engine/` | движок |
 | `queue/` | очередь задач на PostgreSQL |
 | `migrations/` | схема БД |
-| `httpapi/`, `historyview/` | JSON API и страница истории |
+| `httpapi/`, `webui/` | JSON API и консоль с историей экземпляров |
 | `cmd/go-bpm-gen/`, `internal/generator/` | генератор |
 | `examples/demo/` | демо-сервис |

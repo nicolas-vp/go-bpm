@@ -103,6 +103,9 @@ type KindOptions struct {
 	MaxRetryDelay time.Duration
 	// Workers - сколько задач этого вида выполняется одновременно в процессе, по умолчанию 1
 	Workers int
+	// OnFailed выполняется в транзакции, которая помечает задачу failed: попытки кончились или ErrNonRetryable.
+	// Если колбэк упал, задача всё равно помечается failed, уже без него, а ошибка пишется в лог
+	OnFailed func(ctx context.Context, tx Tx, task *Task) error
 }
 
 type kind struct {
@@ -265,7 +268,7 @@ func (q *Queue) process(ctx context.Context, k *kind, task *Task) {
 	log := q.log.With("kind", k.name, "task", task.Id, "attempt", task.Attempt)
 	// аренду теряли столько раз, что попытки кончились: воркеры падают на этой задаче
 	if task.Attempt > task.MaxAttempts {
-		q.finish(ctx, log, task, StatusFailed, errors.New("no attempts left: lease expired"))
+		q.finish(ctx, k, log, task, StatusFailed, errors.New("no attempts left: lease expired"))
 		return
 	}
 
@@ -283,10 +286,10 @@ func (q *Queue) process(ctx context.Context, k *kind, task *Task) {
 
 	switch {
 	case errors.Is(err, ErrCancel):
-		q.finish(ctx, log, task, StatusCancelled, err)
+		q.finish(ctx, k, log, task, StatusCancelled, err)
 	case errors.Is(err, ErrNonRetryable) || task.IsLastAttempt():
 		log.ErrorContext(ctx, "queue: task failed", "error", err)
-		q.finish(ctx, log, task, StatusFailed, err)
+		q.finish(ctx, k, log, task, StatusFailed, err)
 	default:
 		delay := retryDelay(k.opts, task.Attempt)
 		log.WarnContext(ctx, "queue: task will be retried", "delay", delay, "error", err)
@@ -326,10 +329,31 @@ func (q *Queue) complete(ctx context.Context, k *kind, task *Task) (err error) {
 	})
 }
 
-func (q *Queue) finish(ctx context.Context, log *slog.Logger, task *Task, status string, cause error) {
+func (q *Queue) finish(ctx context.Context, k *kind, log *slog.Logger, task *Task, status string, cause error) {
+	if status == StatusFailed && k.opts.OnFailed != nil {
+		err := q.failWithCallback(ctx, k, task, cause)
+		if err == nil {
+			return
+		}
+		log.ErrorContext(ctx, "queue: on failed callback", "error", err)
+	}
 	if _, err := q.pool.Exec(ctx, finishQuery, task.Id, task.Attempt, status, errorText(cause)); err != nil {
 		log.ErrorContext(ctx, "queue: finish task", "status", status, "error", err)
 	}
+}
+
+// failWithCallback помечает задачу failed и выполняет OnFailed в одной транзакции
+func (q *Queue) failWithCallback(ctx context.Context, k *kind, task *Task, cause error) error {
+	ctx, cancel := context.WithTimeout(ctx, k.opts.AttemptTimeout)
+	defer cancel()
+	return pgx.BeginFunc(ctx, q.pool, func(tx pgx.Tx) (err error) {
+		tag, err := tx.Exec(ctx, finishQuery, task.Id, task.Attempt, StatusFailed, errorText(cause))
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		defer recoverPanic(&err)
+		return k.opts.OnFailed(ctx, tx, task)
+	})
 }
 
 // listen будит воркеры по NOTIFY из PushTx. Пока соединения нет, воркеры работают по опросу

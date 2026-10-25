@@ -8,6 +8,8 @@ type Job struct {
 	// обработчик может быть вызван повторно, если предыдущая попытка упала
 	InstanceUid string
 	ProcessName string
+	// BusinessKey - бизнес-ключ экземпляра из старта процесса, пусто, если его не задали
+	BusinessKey string
 	// ElementId - service task в процессе, которая создала задачу
 	ElementId string
 	// JobType - zeebe:taskDefinition type

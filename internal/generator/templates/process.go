@@ -53,6 +53,25 @@ func Deployment(svc *services.Services) map[string]bpm.DeploymentProcess {
 					{{- if $b.ErrorCode }}, ErrorCode: {{ printf "%q" $b.ErrorCode }}{{ end }}}, {{end}}
 				},
 				{{- end }}
+				{{- with $expr.UserTask }}
+				UserTask: &bpm.UserTask{
+					{{- if .Name }}
+					Name:            {{ printf "%q" .Name }},
+					{{- end }}
+					{{- if .Assignee }}
+					Assignee:        {{ printf "%q" .Assignee }},
+					{{- end }}
+					{{- if .CandidateUsers }}
+					CandidateUsers:  []string{ {{ quotes .CandidateUsers }} },
+					{{- end }}
+					{{- if .CandidateGroups }}
+					CandidateGroups: []string{ {{ quotes .CandidateGroups }} },
+					{{- end }}
+					{{- if .FormKey }}
+					FormKey:         {{ printf "%q" .FormKey }},
+					{{- end }}
+				},
+				{{- end }}
 			}, {{end}}
 		},
 	},  {{end}}

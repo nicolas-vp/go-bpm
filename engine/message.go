@@ -18,13 +18,17 @@ const (
 	systemStart = "_system.start"
 	// systemTimer - сработал таймер: промежуточный или граничный
 	systemTimer = "_system.timer"
+	// systemUserTask - задачу пользователя завершили через API: токен идёт дальше
+	systemUserTask = "_system.userTask"
 )
 
 // instanceMessage - токен экземпляра процесса: где он стоит и с какими переменными.
 // Лежит в payload задач очереди, имена полей - часть формата задач в bpm_queue
 type instanceMessage struct {
-	InstanceUid     uuid.UUID
-	ProcessName     string
+	InstanceUid uuid.UUID
+	ProcessName string
+	// BusinessKey - бизнес-ключ корневого экземпляра, задаётся при старте; дочерние экземпляры наследуют его
+	BusinessKey     string `json:",omitempty"`
 	CurrentPosition string
 	Headers         map[string]any
 	Variables       map[string]any

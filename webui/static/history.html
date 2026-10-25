@@ -3,28 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>История процесса</title>
-  <link rel="stylesheet" href="static/vendor/bpmn-js-18.31.0/diagram-js.css">
-  <link rel="stylesheet" href="static/vendor/bpmn-js-18.31.0/bpmn-js.css">
-  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-shared.css">
-  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-decision-table.css">
-  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-js-drd.css">
-  <link rel="stylesheet" href="static/vendor/dmn-js-17.12.0/dmn-font-embedded.css">
-  <link rel="stylesheet" href="static/style.css">
+  <title>История экземпляра — go-bpm</title>
+  <link rel="stylesheet" href="/ui/static/vendor/bpmn-js-18.31.0/diagram-js.css">
+  <link rel="stylesheet" href="/ui/static/vendor/bpmn-js-18.31.0/bpmn-js.css">
+  <link rel="stylesheet" href="/ui/static/vendor/dmn-js-17.12.0/dmn-js-shared.css">
+  <link rel="stylesheet" href="/ui/static/vendor/dmn-js-17.12.0/dmn-js-decision-table.css">
+  <link rel="stylesheet" href="/ui/static/vendor/dmn-js-17.12.0/dmn-js-drd.css">
+  <link rel="stylesheet" href="/ui/static/vendor/dmn-js-17.12.0/dmn-font-embedded.css">
+  <link rel="stylesheet" href="/ui/static/style.css">
+  <link rel="stylesheet" href="/ui/static/history.css">
 </head>
-<body>
+<body class="history-page">
+  <!-- шапка - как у консоли /ui/; история - часть раздела «Экземпляры» -->
   <header class="bar">
-    <h1>История процесса</h1>
-    <form id="instance-form" class="search">
-      <input id="instance-id" name="instanceId" type="text" placeholder="instance id" autocomplete="off" spellcheck="false" required>
-      <button type="submit">Показать</button>
-    </form>
+    <h1>go-bpm</h1>
+    <nav class="tabs" aria-label="Разделы">
+      <a href="/ui/#/processes">Процессы</a>
+      <a href="/ui/#/start">Запуск</a>
+      <a href="/ui/#/instances" aria-current="page">Экземпляры</a>
+      <a href="/ui/#/tasks">Задачи</a>
+    </nav>
   </header>
 
   <section class="summary">
     <div class="summary-main">
       <div id="parent" class="parent" hidden></div>
-      <div id="info" class="info">Введите id экземпляра процесса</div>
+      <div id="info" class="info">Экземпляр не выбран — откройте его в разделе <a href="/ui/#/instances">Экземпляры</a></div>
     </div>
     <div class="legend">
       <span><i class="swatch swatch-completed"></i>пройдено</span>
@@ -66,8 +70,8 @@
     <div id="rules-canvas" class="rules-canvas"></div>
   </dialog>
 
-  <script src="static/vendor/bpmn-js-18.31.0/bpmn-navigated-viewer.production.min.js"></script>
-  <script src="static/vendor/dmn-js-17.12.0/dmn-viewer.production.min.js"></script>
-  <script src="static/app.js"></script>
+  <script src="/ui/static/vendor/bpmn-js-18.31.0/bpmn-navigated-viewer.production.min.js"></script>
+  <script src="/ui/static/vendor/dmn-js-17.12.0/dmn-viewer.production.min.js"></script>
+  <script src="/ui/static/history.js"></script>
 </body>
 </html>

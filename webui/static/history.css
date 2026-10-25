@@ -1,19 +1,10 @@
+/* страница истории: подключается после style.css консоли - цвета, шапка с вкладками и кнопки общие.
+   Здесь раскладка страницы на всю высоту, диаграмма, панель элемента и окно сработавших правил */
 :root {
-  --bg: #ffffff;
-  --text: #001a34;
-  --muted: #707f8d;
-  --border: #d6dbe0;
-  /* синий основных кнопок */
-  --accent: #005bff;
-  --accent-hover: #0048cc;
   /* светло-голубой неактивных кнопок: им подсвечены пройденные элементы */
-  --accent-soft: #e0ecff;
   --completed: var(--accent-soft);
-  --error-bg: #ffebe9;
-  --error-text: #82071e;
   /* задачу прервало граничное событие: таймер или ошибка */
   --terminated: #f91155;
-  --panel-bg: #f2f3f5;
   --link: var(--accent);
   /* выбранный элемент темнее пройденных, иначе выбранный переход не отличить */
   --selected: var(--text);
@@ -22,79 +13,12 @@
   --rule-hit-strong: var(--accent);
 }
 
-* { box-sizing: border-box; }
-
-html, body {
-  height: 100%;
-  margin: 0;
-}
-
-body {
+/* диаграмма занимает всё, что осталось под шапкой */
+.history-page {
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-.bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.bar h1 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.search {
-  display: flex;
-  flex: 1 1 360px;
-  gap: 8px;
-  max-width: 560px;
-}
-
-.search input {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.search input:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-/* синяя кнопка: «Показать», «Перейти в историю подпроцесса» */
-.search button,
-.button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.search button:hover,
-.button:hover {
-  background: var(--accent-hover);
-}
-
-.search button:focus-visible,
-.button:focus-visible {
-  outline: 2px solid var(--accent-soft);
-  outline-offset: 2px;
+  height: 100vh;
+  min-height: 0;
 }
 
 .summary {
@@ -140,7 +64,8 @@ body {
 
 .legend {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
 .swatch {
@@ -159,7 +84,9 @@ body {
 .swatch-rule { background: var(--rule-hit); }
 
 .error {
+  margin: 0;
   padding: 8px 16px;
+  border-radius: 0;
   background: var(--error-bg);
   color: var(--error-text);
 }
@@ -170,9 +97,13 @@ body {
   min-height: 0;
 }
 
+/* canvas - это main: сбрасываем ширину и отступы, которые style.css задаёт main консоли */
 .canvas {
   flex: 1;
   min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
   position: relative;
 }
 
@@ -269,6 +200,25 @@ body {
   margin-bottom: 6px;
 }
 
+/* назначение задачи пользователя: подпись слева, значение справа */
+.assign {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.assign dt {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.assign dd {
+  margin: 0;
+  word-break: break-word;
+}
+
 .pass-event {
   font-weight: 600;
 }
@@ -280,6 +230,7 @@ body {
 }
 
 .vars {
+  max-height: none;
   margin: 0;
   padding: 8px;
   overflow-x: auto;

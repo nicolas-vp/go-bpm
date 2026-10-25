@@ -29,7 +29,8 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 				return err
 			}
 			activateType = bpm.ActivateTypeFlow
-		case bpm.ActivateTypeSyncQueue, bpm.ActivateTypeStartSubprocess, bpm.ActivateTypeCallActivity, bpm.ActivateTypeTimer:
+		case bpm.ActivateTypeSyncQueue, bpm.ActivateTypeStartSubprocess, bpm.ActivateTypeCallActivity, bpm.ActivateTypeTimer,
+			bpm.ActivateTypeUserTask:
 			activateType = bpm.ActivateTypeFlow
 		}
 	}
@@ -51,6 +52,9 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 
 	case bpm.ActivateTypeTimer:
 		return s.activateTimer(ctx, tx, message, expression)
+
+	case bpm.ActivateTypeUserTask:
+		return s.activateUserTask(ctx, tx, message, expression)
 
 	case bpm.ActivateTypeBoundary:
 		return fmt.Errorf("process %q: boundary event %q is reached by sequence flow", message.ProcessName, expression.ElementId)
@@ -85,9 +89,13 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 		newMessage := &instanceMessage{
 			InstanceUid:     newInstanceUid,
 			ProcessName:     expression.ProcessId,
+			BusinessKey:     message.BusinessKey,
 			CurrentPosition: newProcess.StartElement,
 			Headers:         maps.Clone(message.Headers),
 			Variables:       maps.Clone(message.Variables),
+		}
+		if err := s.startInstance(ctx, tx, newMessage); err != nil {
+			return err
 		}
 		if err := s.moveNext(ctx, tx, newMessage, newProcess.StartElement, moveActivate); err != nil {
 			return err
@@ -99,6 +107,9 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 
 	case bpm.ActivateTypeEnd:
 		if err := s.logHistory(ctx, tx, HistoryCompleted, message, expression); err != nil {
+			return err
+		}
+		if err := s.completeInstance(ctx, tx, message); err != nil {
 			return err
 		}
 		parentProcess, found := message.ParentProcess[message.InstanceUid]
@@ -139,6 +150,9 @@ func (s *Engine) startChildProcess(ctx context.Context, tx queue.Tx, message *in
 	}
 	message.InstanceUid = newInstanceUid
 	message.ProcessName = expression.ProcessId
+	if err := s.startInstance(ctx, tx, message); err != nil {
+		return err
+	}
 	return s.moveNext(ctx, tx, message, child.StartElement, moveActivate)
 }
 

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"text/template"
 
 	"github.com/nicolas-vp/go-bpm/bpm"
@@ -236,6 +238,14 @@ func prepareFileProcesses(deployment deploymentFile, filePath string) {
 		"completeType": bpm.CompleteType.String,
 		"boundaryType": bpm.BoundaryType.String,
 		"duration":     utils.DurationLiteral,
+		// quotes - строки списком Go-литералов через запятую, с экранированием (значения из BPMN)
+		"quotes": func(strs []string) string {
+			quoted := make([]string, len(strs))
+			for i, s := range strs {
+				quoted[i] = strconv.Quote(s)
+			}
+			return strings.Join(quoted, ", ")
+		},
 	}
 
 	t, err := template.New("deployment").Funcs(funcMap).Parse(templates.ProcessTemplate)

@@ -1,6 +1,11 @@
 // Package httpapi - JSON API движка на net/http:
-//   - POST /api/v1/processes/{name}/instances - запустить экземпляр процесса, тело {"variables": {...}},
+//   - GET /api/v1/processes - процессы движка с числом экземпляров по статусам;
+//   - GET /api/v1/processes/{name} - процесс с BPMN;
+//   - POST /api/v1/processes/{name}/instances - запустить экземпляр процесса, тело {"variables": {...}, "businessKey": "..."},
 //     ответ {"id": "<instance id>"};
+//   - GET /api/v1/instances?processName=&status=&businessKey=&limit=&before= - экземпляры от последних запущенных,
+//     before - id последнего экземпляра предыдущей страницы;
+//   - GET /api/v1/instances/{id} - экземпляр: тип процесса, бизнес-ключ, статус, когда запущен и обновлён;
 //   - GET /api/v1/instances/{id}/history?withChildren=true - история экземпляра в порядке записи,
 //     withChildren добавляет дочерние экземпляры (подпроцессы и callActivity) на всю глубину.
 //
@@ -23,18 +28,36 @@ import (
 // maxBodySize - предел тела запроса старта процесса
 const maxBodySize = 1 << 20
 
+// ProcessStarter - процессы движка и их запуск; *engine.Engine подходит
 type ProcessStarter interface {
-	StartProcess(ctx context.Context, processName string, variables map[string]any) (uuid.UUID, error)
+	Processes() []engine.ProcessDefinition
+	Process(id string) (*engine.ProcessDefinition, error)
+	StartProcess(ctx context.Context, processName string, variables map[string]any, opts ...engine.StartOption) (uuid.UUID, error)
 }
 
 type HistoryReader interface {
 	GetHistory(ctx context.Context, instanceUid uuid.UUID, withChildren bool) ([]engine.HistoryRecord, error)
+	GetInstance(ctx context.Context, instanceUid uuid.UUID) (*engine.Instance, error)
+	ListInstances(ctx context.Context, filter engine.InstanceFilter) ([]engine.Instance, error)
+	CountInstances(ctx context.Context) ([]engine.InstanceCount, error)
+}
+
+// ProcessSummary - процесс в списке: Instances - число экземпляров по статусам, без дочерних встроенных подпроцессов
+type ProcessSummary struct {
+	engine.ProcessDefinition
+	Instances map[string]int64 `json:"instances"`
+}
+
+type ProcessesResponse struct {
+	Processes []ProcessSummary `json:"processes"`
 }
 
 // StartRequest - тело запроса старта процесса
 type StartRequest struct {
 	// Variables - переменные экземпляра; числа приходят как float64, как из любого JSON
 	Variables map[string]any `json:"variables"`
+	// BusinessKey - бизнес-ключ экземпляра, необязательный
+	BusinessKey string `json:"businessKey"`
 }
 
 type StartResponse struct {
@@ -45,10 +68,60 @@ type HistoryResponse struct {
 	Records []engine.HistoryRecord `json:"records"`
 }
 
+type InstancesResponse struct {
+	Instances []engine.Instance `json:"instances"`
+}
+
 // Register вешает API на mux
 func Register(mux *http.ServeMux, processes ProcessStarter, history HistoryReader) {
+	mux.HandleFunc("GET /api/v1/processes", listProcessesHandler(processes, history))
+	mux.HandleFunc("GET /api/v1/processes/{name}", processHandler(processes))
 	mux.HandleFunc("POST /api/v1/processes/{name}/instances", startHandler(processes))
+	mux.HandleFunc("GET /api/v1/instances", listInstancesHandler(history))
+	mux.HandleFunc("GET /api/v1/instances/{id}", instanceHandler(history))
 	mux.HandleFunc("GET /api/v1/instances/{id}/history", historyHandler(history))
+}
+
+func listProcessesHandler(processes ProcessStarter, history HistoryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		counts, err := history.CountInstances(r.Context())
+		if err != nil {
+			slog.ErrorContext(r.Context(), "count instances", "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		byProcess := make(map[string]map[string]int64)
+		for _, count := range counts {
+			if byProcess[count.ProcessName] == nil {
+				byProcess[count.ProcessName] = make(map[string]int64)
+			}
+			byProcess[count.ProcessName][count.Status] = count.Count
+		}
+		list := []ProcessSummary{}
+		for _, definition := range processes.Processes() {
+			instances := byProcess[definition.Id]
+			if instances == nil {
+				instances = map[string]int64{}
+			}
+			list = append(list, ProcessSummary{ProcessDefinition: definition, Instances: instances})
+		}
+		writeJSON(w, http.StatusOK, ProcessesResponse{Processes: list})
+	}
+}
+
+func processHandler(processes ProcessStarter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		definition, err := processes.Process(r.PathValue("name"))
+		if errors.Is(err, engine.ErrProcessNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, definition)
+	}
 }
 
 func startHandler(processes ProcessStarter) http.HandlerFunc {
@@ -58,7 +131,11 @@ func startHandler(processes ProcessStarter) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "body: "+err.Error())
 			return
 		}
-		id, err := processes.StartProcess(r.Context(), r.PathValue("name"), req.Variables)
+		var opts []engine.StartOption
+		if req.BusinessKey != "" {
+			opts = append(opts, engine.WithBusinessKey(req.BusinessKey))
+		}
+		id, err := processes.StartProcess(r.Context(), r.PathValue("name"), req.Variables, opts...)
 		if errors.Is(err, engine.ErrProcessNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -69,6 +146,68 @@ func startHandler(processes ProcessStarter) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, StartResponse{Id: id})
+	}
+}
+
+func listInstancesHandler(history HistoryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		filter := engine.InstanceFilter{
+			ProcessName: query.Get("processName"),
+			Status:      query.Get("status"),
+			BusinessKey: query.Get("businessKey"),
+		}
+		if value := query.Get("limit"); value != "" {
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 {
+				writeError(w, http.StatusBadRequest, "limit: positive integer expected")
+				return
+			}
+			filter.Limit = limit
+		}
+		if value := query.Get("before"); value != "" {
+			before, err := uuid.Parse(value)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "before: "+err.Error())
+				return
+			}
+			filter.Before = before
+		}
+		instances, err := history.ListInstances(r.Context(), filter)
+		if errors.Is(err, engine.ErrInvalidStatus) {
+			writeError(w, http.StatusBadRequest, "status: "+err.Error())
+			return
+		}
+		if err != nil {
+			slog.ErrorContext(r.Context(), "list instances", "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if instances == nil {
+			instances = []engine.Instance{}
+		}
+		writeJSON(w, http.StatusOK, InstancesResponse{Instances: instances})
+	}
+}
+
+func instanceHandler(history HistoryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		instanceUid, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "id: "+err.Error())
+			return
+		}
+		instance, err := history.GetInstance(r.Context(), instanceUid)
+		if errors.Is(err, engine.ErrInstanceNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if err != nil {
+			slog.ErrorContext(r.Context(), "get instance", "instance", instanceUid, "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, instance)
 	}
 }
 

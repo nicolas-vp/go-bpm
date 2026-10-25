@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Консоль go-bpm</title>
+  <link rel="stylesheet" href="/ui/static/vendor/bpmn-js-18.31.0/diagram-js.css">
+  <link rel="stylesheet" href="/ui/static/vendor/bpmn-js-18.31.0/bpmn-js.css">
+  <link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>go-bpm</h1>
+    <nav class="tabs" aria-label="Разделы">
+      <a href="/ui/#/processes" data-tab="processes">Процессы</a>
+      <a href="/ui/#/start" data-tab="start">Запуск</a>
+      <a href="/ui/#/instances" data-tab="instances">Экземпляры</a>
+      <a href="/ui/#/tasks" data-tab="tasks">Задачи</a>
+    </nav>
+  </header>
+
+  <div id="error" class="error" role="alert" hidden></div>
+
+  <main>
+    <!-- Процессы: список с числом экземпляров по статусам и схема выбранного -->
+    <section id="tab-processes" class="tab" hidden>
+      <div class="section-head">
+        <h2>Процессы</h2>
+        <button id="processes-refresh" class="button-quiet" type="button">Обновить</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Процесс</th>
+              <th class="num">Выполняются</th>
+              <th class="num">Завершены</th>
+              <th class="num">Упали</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="processes-body"></tbody>
+        </table>
+      </div>
+      <div id="diagram-box" class="diagram-box" hidden>
+        <div class="section-head">
+          <h3 id="diagram-title"></h3>
+          <button id="diagram-close" class="panel-close" type="button" aria-label="Закрыть схему">×</button>
+        </div>
+        <div id="diagram" class="diagram"></div>
+      </div>
+    </section>
+
+    <!-- Запуск: процесс, бизнес-ключ и переменные -->
+    <section id="tab-start" class="tab" hidden>
+      <h2>Запуск процесса</h2>
+      <form id="start-form" class="form">
+        <label class="field">
+          <span>Процесс</span>
+          <select id="start-process" required></select>
+        </label>
+        <label class="field">
+          <span>Бизнес-ключ <span class="muted">необязательно</span></span>
+          <input id="start-key" type="text" autocomplete="off" placeholder="например, order-42">
+        </label>
+        <fieldset class="field">
+          <legend>Переменные</legend>
+          <div id="start-vars"></div>
+        </fieldset>
+        <div class="actions">
+          <button class="button" type="submit">Запустить</button>
+        </div>
+      </form>
+      <div id="start-result" class="notice" hidden></div>
+    </section>
+
+    <!-- Экземпляры: поиск по процессу, статусу и бизнес-ключу, страницы от новых к старым -->
+    <section id="tab-instances" class="tab" hidden>
+      <h2>Экземпляры</h2>
+      <form id="instances-form" class="filters">
+        <label class="field">
+          <span>Процесс</span>
+          <select id="instances-process"><option value="">все</option></select>
+        </label>
+        <label class="field">
+          <span>Статус</span>
+          <select id="instances-status">
+            <option value="">все</option>
+            <option value="running">выполняется</option>
+            <option value="completed">завершён</option>
+            <option value="failed">упал</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Бизнес-ключ</span>
+          <input id="instances-key" type="text" autocomplete="off">
+        </label>
+        <button class="button" type="submit">Найти</button>
+      </form>
+      <div class="table-wrap">
+        <table class="table table-rows">
+          <thead>
+            <tr>
+              <th>Экземпляр</th>
+              <th>Процесс</th>
+              <th>Бизнес-ключ</th>
+              <th>Статус</th>
+              <th>Запущен</th>
+              <th>Обновлён</th>
+              <th>Родитель</th>
+            </tr>
+          </thead>
+          <tbody id="instances-body"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="instances-prev" class="button-quiet" type="button">← Новее</button>
+        <span id="instances-page" class="muted"></span>
+        <button id="instances-next" class="button-quiet" type="button">Старее →</button>
+      </div>
+    </section>
+
+    <!-- Задачи: свои и доступные пользователю или его группам -->
+    <section id="tab-tasks" class="tab" hidden>
+      <h2>Задачи</h2>
+      <form id="tasks-form" class="filters">
+        <label class="field">
+          <span>Пользователь</span>
+          <input id="tasks-user" type="text" autocomplete="off" placeholder="например, bob">
+        </label>
+        <label class="field field-wide">
+          <span>Группы <span class="muted">через запятую</span></span>
+          <input id="tasks-groups" type="text" autocomplete="off" placeholder="например, managers, admins">
+        </label>
+        <button class="button" type="submit">Показать</button>
+      </form>
+      <div id="tasks-lists" hidden>
+        <div id="tasks-mine-box">
+          <h3>Мои задачи <span id="tasks-mine-count" class="count"></span></h3>
+          <ul id="tasks-mine" class="cards"></ul>
+        </div>
+        <h3>Можно взять <span id="tasks-open-count" class="count"></span></h3>
+        <p id="tasks-no-user" class="muted">Чтобы взять задачу, укажите пользователя.</p>
+        <ul id="tasks-open" class="cards"></ul>
+        <div class="actions tasks-refresh">
+          <button id="tasks-refresh" class="button-quiet" type="button">Обновить</button>
+        </div>
+      </div>
+      <p id="tasks-hint" class="muted">Введите пользователя или группы — появится очередь задач, которые можно взять, а у пользователя ещё и его задачи в работе.</p>
+    </section>
+  </main>
+
+  <dialog id="complete" class="dialog" aria-labelledby="complete-title">
+    <form id="complete-form" method="dialog">
+      <header class="panel-head">
+        <div>
+          <div id="complete-title" class="panel-title"></div>
+          <div id="complete-subtitle" class="panel-type"></div>
+        </div>
+        <button id="complete-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
+      </header>
+      <div class="dialog-body">
+        <h4>Переменные процесса</h4>
+        <pre id="complete-vars" class="vars"></pre>
+        <h4>Результат</h4>
+        <div id="complete-editor"></div>
+        <div id="complete-error" class="error" hidden></div>
+      </div>
+      <footer class="actions dialog-foot">
+        <button id="complete-cancel" class="button-quiet" type="button">Отмена</button>
+        <button class="button" type="submit">Выполнить</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="/ui/static/vendor/bpmn-js-18.31.0/bpmn-navigated-viewer.production.min.js"></script>
+  <script src="/ui/static/app.js"></script>
+</body>
+</html>

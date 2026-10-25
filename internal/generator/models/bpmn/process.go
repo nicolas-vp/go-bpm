@@ -16,6 +16,7 @@ type Process struct {
 	Tasks             []Task             `xml:"task"`
 	ScriptTasks       []ScriptTask       `xml:"scriptTask"`
 	BusinessRuleTasks []BusinessRuleTask `xml:"businessRuleTask"`
+	UserTasks         []UserTask         `xml:"userTask"`
 	BoundaryEvents    []BoundaryEvent    `xml:"boundaryEvent"`
 	// IntermediateCatchEvents - промежуточные события ожидания, поддерживается таймер
 	IntermediateCatchEvents []IntermediateCatchEvent `xml:"intermediateCatchEvent"`
