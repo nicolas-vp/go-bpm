@@ -2,6 +2,61 @@
 
 Как собрать движок в сервисе, какие у него настройки, что лежит в базе и что делать, когда экземпляр упал.
 
+## Docker
+
+Демо-сервис собирается в образ `ghcr.io/nicolas-vp/go-bpm` (`Dockerfile` в корне: статический бинарник в
+distroless, около 15 МБ). Его публикует CI (`.github/workflows/ci.yml`, job `image`) после зелёных тестов:
+
+| Событие | Теги образа |
+|---|---|
+| push в `main` | `latest`, `sha-<коммит>` |
+| тег `v1.2.3` | `1.2.3`, `1.2`, `sha-<коммит>` |
+| pull request | образ собирается, но не публикуется |
+
+Запуск с PostgreSQL — `compose.yaml` в корне:
+
+```sh
+cp .env.example .env          # задайте POSTGRES_PASSWORD (буквы и цифры)
+docker compose up -d          # образ из ghcr.io; из исходников: docker compose up -d --build
+docker compose logs -f go-bpm
+```
+
+Консоль — <http://localhost:8080/ui/>. Данные базы — в томе `pgdata`, переживают пересоздание контейнеров.
+
+| Переменная `.env` | По умолчанию | Что это |
+|---|---|---|
+| `POSTGRES_PASSWORD` | — (обязательна) | пароль пользователя `go_bpm`; подставляется в строку подключения |
+| `GO_BPM_TAG` | `latest` | версия образа |
+| `GO_BPM_LISTEN` | `127.0.0.1:8080` | где слушать на хосте |
+
+Порт по умолчанию открыт только на localhost: у консоли и API нет авторизации. Наружу их выставляйте через
+reverse proxy с авторизацией (nginx, Caddy, Traefik). База наружу не публикуется вовсе.
+
+Обновление до нового образа: `docker compose pull && docker compose up -d` — миграции применятся при старте.
+
+### Выкладка на сервер из CI
+
+Job `deploy` в `.github/workflows/ci.yml` после публикации образа из `main` заходит на сервер по SSH и вызывает
+`deploy/deploy.sh`: тот обновляет `compose.yaml`, скачивает образ `sha-<коммит>`, пересоздаёт контейнер
+приложения и удаляет старые образы. База и её том остаются. Подготовка сервера (Ubuntu с Docker):
+
+```sh
+apt-get install -y docker-compose-v2
+install -d -m 750 /opt/go-bpm && install -m 750 deploy/deploy.sh /opt/go-bpm/   # скрипт и compose.yaml из репозитория
+cp compose.yaml /opt/go-bpm/
+printf 'POSTGRES_PASSWORD=%s\nGO_BPM_TAG=latest\nGO_BPM_LISTEN=127.0.0.1:8080\n' "$(openssl rand -hex 24)" > /opt/go-bpm/.env
+chmod 600 /opt/go-bpm/.env
+ssh-keygen -t ed25519 -N '' -f deploy_key   # ключ для CI
+echo "command=\"/opt/go-bpm/deploy.sh\",restrict $(cat deploy_key.pub)" >> ~/.ssh/authorized_keys
+```
+
+Секреты репозитория (Settings → Secrets and variables → Actions): `DEPLOY_HOST` — адрес сервера,
+`DEPLOY_SSH_KEY` — содержимое `deploy_key`, `DEPLOY_KNOWN_HOSTS` — вывод `ssh-keyscan -t ed25519 <адрес>`.
+Ключу разрешено только вызвать `deploy.sh`. Откат на прошлую версию — `GO_BPM_TAG=sha-<коммит>` в
+`/opt/go-bpm/.env` и `docker compose up -d` в этом каталоге.
+
+Свой сервис на go-bpm собирается так же: замените в `Dockerfile` путь `./examples/demo/cmd/demo` на свой `main`.
+
 ## Сборка сервиса
 
 Минимальный порядок вызовов:

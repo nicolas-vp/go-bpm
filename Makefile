@@ -2,7 +2,7 @@
 GO_BPM_TEST_DSN ?= postgres://postgres:postgres@localhost:5432/go_bpm_test?sslmode=disable
 GO_BPM_DSN ?= postgres://postgres:postgres@localhost:5432/go_bpm?sslmode=disable
 
-.PHONY: build test test-unit generate run lint
+.PHONY: build test test-unit generate run lint docker
 
 build:
 	go build ./...
@@ -25,3 +25,7 @@ run:
 lint:
 	go vet ./...
 	test -z "$$(gofmt -l .)"
+
+# образ демо-сервиса, как его собирает CI (ghcr.io/nicolas-vp/go-bpm)
+docker:
+	docker build -t go-bpm .

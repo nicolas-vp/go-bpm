@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.vscode
+.mcp.json
+.env
+docs
+bin
+*.out

@@ -69,6 +69,15 @@ service task `internal/bpmgen/handlers` и методы задач `method_<id>.
 
 ## Демо
 
+В Docker, с PostgreSQL ([подробнее](docs/running.md#docker)):
+
+```sh
+cp .env.example .env    # задайте POSTGRES_PASSWORD
+docker compose up -d    # консоль http://localhost:8080/ui/
+```
+
+Из исходников:
+
 ```sh
 createdb go_bpm
 make run    # examples/demo, консоль http://localhost:8080/ui/

@@ -1,0 +1,37 @@
+# Демо go-bpm с PostgreSQL. Настройки - в .env рядом (образец - .env.example):
+#
+#	cp .env.example .env    # задайте POSTGRES_PASSWORD
+#	docker compose up -d    # образ из ghcr.io; собрать из исходников: docker compose up -d --build
+#	open http://localhost:8080/ui/
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: go_bpm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: go_bpm
+    volumes:
+      # у postgres 18 данные лежат в подкаталоге версии внутри /var/lib/postgresql
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U go_bpm -d go_bpm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  go-bpm:
+    image: ghcr.io/nicolas-vp/go-bpm:${GO_BPM_TAG:-latest}
+    build: .
+    environment:
+      GO_BPM_DSN: postgres://go_bpm:${POSTGRES_PASSWORD}@postgres:5432/go_bpm?sslmode=disable
+    ports:
+      # по умолчанию только localhost: у консоли и API нет авторизации, наружу - через прокси с ней
+      - "${GO_BPM_LISTEN:-127.0.0.1:8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

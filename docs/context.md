@@ -281,6 +281,16 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
   - Проверялась headless Chrome через chromedp (скрипт вне репозитория): все вкладки, схема, запуск, взять и выполнить задачу, страницы списка, переход в историю, ширина телефона.
 - Раньше API и страница жили на двух портах (public 7000 и admin 7001); теперь всё на одном `http.ServeMux`, порт выбирает сервис (демо — `:8080`).
 
+## Docker и публикация
+
+- `Dockerfile`: сборка в `golang:1.26-alpine` (`CGO_ENABLED=0`, `-trimpath -s -w`), образ — `gcr.io/distroless/static-debian12:nonroot` с одним бинарником демо: статика консоли и миграции вшиты. Без shell, поэтому healthcheck у контейнера сервиса нет; у postgres — `pg_isready`, сервис ждёт его через `depends_on: service_healthy`.
+- `compose.yaml`: `postgres:18` с томом `pgdata` на `/var/lib/postgresql` (у 18 данные в подкаталоге версии) и `go-bpm` из `ghcr.io/nicolas-vp/go-bpm:${GO_BPM_TAG:-latest}` (`build: .` — собрать локально). Порт по умолчанию `127.0.0.1:8080`: у консоли и API нет авторизации. Пароль базы подставляется в DSN, поэтому без спецсимволов URL. `.env` в `.gitignore`, образец — `.env.example`.
+- CI (`.github/workflows/ci.yml`, job `image` после `test`): GHCR, вход `GITHUB_TOKEN` (`permissions: packages: write`), только `linux/amd64` (сервер пользователя — amd64), кэш слоёв `type=gha`. Теги — `docker/metadata-action`: `latest` из main, `sha-<коммит>`, semver из тегов `v*`. На pull request образ собирается без публикации.
+- Пакет GHCR публичный: после первой публикации видимость переключается вручную (Package settings → Change visibility).
+- Выкладка (job `deploy` после `image`, только push в main, `concurrency: deploy`): `ssh root@$DEPLOY_HOST "sha-<7 знаков> <actor> <GITHUB_TOKEN>" < compose.yaml`. Ключ `DEPLOY_SSH_KEY` в `authorized_keys` сервера — с `command="/opt/go-bpm/deploy.sh",restrict`: ничего другого он не выполнит, аргументы скрипт читает из `SSH_ORIGINAL_COMMAND` и проверяет тег. Хост-ключ — секрет `DEPLOY_KNOWN_HOSTS`.
+- `deploy/deploy.sh` (копия лежит на сервере в `/opt/go-bpm`, после правки скопировать туда вручную — ключ CI его не обновляет): принимает `compose.yaml` из коммита, если `docker compose config` его принимает; `docker login` во временный `DOCKER_CONFIG` (выкладка работает и с приватным пакетом); pull тега, и только после успешного pull тег пишется в `.env`; `up -d --no-build --wait`; удаляет прочие теги `ghcr.io/nicolas-vp/go-bpm`; ждёт ответа `/ui/`. База и том `pgdata` не трогаются. Откат — `GO_BPM_TAG=sha-<старый>` в `/opt/go-bpm/.env` и `docker compose up -d` (или перезапуск старого прогона CI).
+- На сервере `.env` создан один раз (`POSTGRES_PASSWORD` — `openssl rand -hex 24`, хранится только там), порт `127.0.0.1:8080`.
+
 ## Документация
 
 Пользовательская документация — `docs/*.md` (оглавление `docs/README.md`), этот файл — журнал решений для разработчиков.
