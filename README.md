@@ -11,6 +11,19 @@ BPM-движок на PostgreSQL для Go-сервисов. Процессы р
   и история экземпляра с диаграммой bpmn-js и сработавшими правилами DMN.
 - Зависимости: `pgx/v5`, `google/uuid`, `golang.org/x/tools` (генератор).
 
+## Документация
+
+| | |
+|---|---|
+| [Быстрый старт](docs/quickstart.md) | демо за пять минут и свой сервис с нуля |
+| [Принципы работы](docs/concepts.md) | BPMN и DMN, токен, шаги и транзакции, повторы, переменные |
+| [Моделирование BPMN](docs/bpmn.md) | поддерживаемые элементы, настройки в Camunda Modeler, ограничения |
+| [Решения DMN](docs/dmn.md) | таблицы решений, ячейки, hit policy, история правил |
+| [Генератор кода](docs/generator.md) | запуск, раскладка, модель данных, методы и обработчики |
+| [Разбор примеров](docs/examples.md) | все процессы демо: BPMN, код, запуск, эксперименты |
+| [Запуск и эксплуатация](docs/running.md) | настройки, таблицы, масштабирование, мониторинг, упавшие экземпляры |
+| [HTTP API и консоль](docs/api.md) | процессы, экземпляры, задачи пользователей, консоль `/ui/` |
+
 ## Встроить в сервис
 
 ```sh
@@ -33,7 +46,11 @@ _ = migrations.Up(ctx, pool)
 
 svc := &services.Services{} // ваши внешние сервисы для методов и обработчиков
 q := queue.New(pool, queue.Options{})
-e, _ := engine.New(q, engine.Config{}, bpmgen.Processes(svc), bpmgen.Queues(svc))
+on := func() bool { return true }
+e, _ := engine.New(q, engine.Config{
+	History:      engine.HistoryConfig{ToDB: on}, // экземпляры и история в базе
+	RulesHistory: engine.HistoryConfig{ToDB: on}, // сработавшие правила DMN
+}, bpmgen.Processes(svc), bpmgen.Queues(svc))
 history := engine.NewHistoryReader(pool, bpmgen.Processes(svc), bpmgen.Decisions)
 
 mux := http.NewServeMux()
@@ -47,7 +64,8 @@ defer q.Stop()
 
 Рукописные части — модель данных `internal/bpmgen/model`, сервисы `internal/bpmgen/services`, обработчики
 service task `internal/bpmgen/handlers` и методы задач `method_<id>.go`. Генератор создаёт для них заглушки и
-никогда не перезаписывает. Подробнее — [docs/context.md](docs/context.md).
+никогда не перезаписывает. Пошагово — [Быстрый старт](docs/quickstart.md#свой-сервис-с-нуля); решения и
+договорённости разработчиков движка — [docs/context.md](docs/context.md).
 
 ## Демо
 
