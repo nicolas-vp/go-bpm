@@ -38,17 +38,18 @@ update bpm_queue
 set status = 'cancelled', updated_at = now()
 where kind = $1 and key = $2 and status = 'pending'`
 
-	// fetchQuery выдаёт задачу в аренду до run_at = now() + lease
+	// fetchQuery выдаёт задачу в аренду до run_at = now() + lease. Подзапрос скалярный (InitPlan) и выполняется
+	// один раз: с update ... from (select ... for update skip locked) один fetch под нагрузкой движка иногда брал
+	// в аренду несколько задач, QueryRow возвращал одну, а остальные лежали до конца аренды и тратили попытку
 	fetchQuery = `
-update bpm_queue q
-set attempt = q.attempt + 1, run_at = now() + $2 * interval '1 microsecond', updated_at = now()
-from (select id
-      from bpm_queue
-      where kind = $1 and status = 'pending' and run_at <= now()
-      order by run_at, id
-      limit 1 for update skip locked) next
-where q.id = next.id
-returning q.id, q.payload, q.attempt`
+update bpm_queue
+set attempt = attempt + 1, run_at = now() + $2 * interval '1 microsecond', updated_at = now()
+where id = (select id
+            from bpm_queue
+            where kind = $1 and status = 'pending' and run_at <= now()
+            order by run_at, id
+            limit 1 for update skip locked)
+returning id, payload, attempt`
 
 	// finishQuery завершает задачу, только если её всё ещё держит эта попытка
 	finishQuery = `
