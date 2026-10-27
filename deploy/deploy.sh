@@ -36,14 +36,37 @@ if ! docker compose -f compose.yaml.new --env-file .env config -q; then
 fi
 mv compose.yaml.new compose.yaml
 
+# retry повторяет команду: связь сервера с ghcr.io рвётся (dial tcp ...:443: i/o timeout), а pull - это десятки
+# запросов, хотя бы один из которых срывается. Паузы 5, 10, 15, 20 с
+retry() {
+	n=1
+	until "$@"; do
+		if [ $n -ge 5 ]; then
+			echo "не удалось за $n попыток: $1" >&2
+			return 1
+		fi
+		echo "не удалось (попытка $n), повтор через $((n * 5)) с: $1" >&2
+		sleep $((n * 5))
+		n=$((n + 1))
+	done
+}
+
+login() {
+	printf '%s' "$2" | docker login ghcr.io -u "$1" --password-stdin
+}
+
+pull() {
+	GO_BPM_TAG=$tag docker compose pull go-bpm
+}
+
 DOCKER_CONFIG=$(mktemp -d)
 export DOCKER_CONFIG
 trap 'rm -rf "$DOCKER_CONFIG"' EXIT
 if [ $# -ge 3 ]; then
-	printf '%s' "$3" | docker login ghcr.io -u "$2" --password-stdin
+	retry login "$2" "$3"
 fi
 
-GO_BPM_TAG=$tag docker compose pull go-bpm
+retry pull
 
 # тег запоминается в .env, когда образ уже скачан: ручной docker compose up поднимет ту же версию
 if grep -q '^GO_BPM_TAG=' .env; then
