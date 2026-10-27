@@ -14,7 +14,7 @@
 | `queue` | Очередь задач на PostgreSQL, таблица `bpm_queue` (замена внешней библиотеки очереди) |
 | `migrations` | Схема БД: вшитые SQL-файлы и `Up(ctx, pool)` |
 | `httpapi` | JSON API: старт процесса, поиск экземпляров, история экземпляра, задачи пользователей |
-| `webui` | Консоль `/ui/`: процессы, запуск, поиск экземпляров, задачи пользователей; история экземпляра `/ui/history/` — диаграмма bpmn-js с пройденными элементами, таблицы DMN (бывший пакет `historyview`) |
+| `webui` | Консоль `/ui/`: процессы, запуск, поиск экземпляров, задачи пользователей, термокарта процесса; история экземпляра `/ui/history/` — диаграмма bpmn-js с пройденными элементами, таблицы DMN (бывший пакет `historyview`) |
 | `cmd/go-bpm-gen` | Генератор Go-кода из BPMN/DMN (бывший `pg-bpm-gen`) |
 | `internal/generator/...` | Внутренности генератора: `codegen` (бывший `queue-generator`), `templates`, `parser`, `models`, `utils`, `file` |
 | `internal/pgtest` | Postgres для интеграционных тестов (`GO_BPM_TEST_DSN`) |
@@ -242,7 +242,12 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - **История бизнес-правил** (`rules_history.go`): `activateMethod` кладёт в ctx метода `decisionRecorder`, который копит вызовы `bpm.RecordDecision`. Пишутся они (`logDecisions`) только после успешного метода, в tx шага: если метод упал или его прервал граничный таймер, правил в истории нет.
   - На экран: строка `rules history: process=... instance=... element=... decision=... rules=[...] result=...`.
   - В базу: `bpm_rules_history` (`rule_ids jsonb` — массив id правил, `result jsonb`; индекс `(instance_uid, element_id, id)`).
-- **Чтение истории:** `engine.NewHistoryReader(pool, processes, bpmgen.Decisions)` — `GetHistory(id, withChildren)`, `GetDiagram(id)`, `GetRulesHistory(id, elementId)`, `GetInstance(id)`, `ListInstances(filter)`. Читает через интерфейс `Querier` (`*pgxpool.Pool` подходит).
+- **Чтение истории:** `engine.NewHistoryReader(pool, processes, bpmgen.Decisions)` — `GetHistory(id, withChildren)`, `GetDiagram(id)`, `GetRulesHistory(id, elementId)`, `GetInstance(id)`, `ListInstances(filter)`, `GetHeatmap(filter)`. Читает через интерфейс `Querier` (`*pgxpool.Pool` подходит).
+- **Термокарта** (`heatmap.go`): `GetHeatmap(HeatmapFilter{ProcessName, From, To, Limit})` берёт последние запущенные экземпляры процесса из `bpm_process_instance` (и вызванные callActivity другого процесса: это тоже выполнения процесса) (`created_at` в `[From, To)`), рекурсивно добавляет их встроенные подпроцессы (`"<процесс>.<подпроцесс>"` по `bpm_history.parent_instance_uid`, ветка callActivity обрывается) и одним запросом читает их записи по порядку `instance_uid, id`. Каждый экземпляр считается отдельно (`heatmapBuilder.addInstance`):
+  - элемент с `activated` (service task, user task, таймер, callActivity) — от `activated` до `completed`/`terminated`, очередью: в цикле элемент приходит снова;
+  - остальные — от последнего `completed`/`terminated` предшественника в том же экземпляре (предшественники — по `NextElements` всех потоков процесса и от задачи к её `Boundaries`; id элементов уникальны в BPMN-файле, поэтому карта одна). Так метод task/scriptTask, который пишет только `completed`, получает время своего выполнения, а встроенный подпроцесс — время от входа до выхода. Нет предшественника в истории (старт) — 0.
+  - Почему не «предыдущая запись экземпляра»: параллельные ветки одного экземпляра идут разными шагами одновременно, их записи перемешаны по `id`.
+  - `activated` без завершения — `Active`, в длительности не входит. Результат — от самых долгих по сумме.
 
 ## Схема БД (`migrations`)
 
@@ -258,6 +263,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
   - `POST /api/v1/processes/{name}/instances` с телом `{"variables": {...}, "businessKey": "..."}` (ключ необязателен) → `201 {"id": "..."}`; неизвестный процесс — 404. Переменные — любые JSON-значения (в gRPC были только строки).
   - `GET /api/v1/instances?processName=&status=&businessKey=&limit=&before=` → `{"instances": [...]}` (пустой список — `[]`); неверные `status`, `limit`, `before` — 400.
   - `GET /api/v1/instances/{id}` → экземпляр; нет строки — 404.
+  - `GET /api/v1/processes/{name}/heatmap?from=&to=&limit=` → `engine.Heatmap` (`HistoryReader.GetHeatmap`): длительности элементов по экземплярам, запущенным в `[from, to)` (RFC 3339), последние `limit` (1000, не больше 10000). Неизвестный процесс — 404.
 - **`httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, engine))`** — отдельно от `Register`, сервису без задач пользователей не нужен:
   - `GET /api/v1/tasks?assignee=&candidateUser=&candidateGroup=&processName=&instanceId=&businessKey=&status=&limit=&before=` → `{"tasks": [...]}`; `candidateGroup` можно повторять или писать через запятую, `status` — `created` (по умолчанию) или `completed`;
   - `GET /api/v1/tasks/{id}` → задача с `variables`;
@@ -272,6 +278,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
   - Клик по элементу открывает боковую панель: проходы элемента с переменными и вызванные экземпляры callActivity. Выбранный элемент сохраняется в адресе как `&element=<id>`. Двойной клик по callActivity с одним вызванным экземпляром открывает его, у дочернего экземпляра сверху ссылка на родителя; переходы через `history.pushState`.
   - У User Task блок «Назначение» (`GET /ui/history/api/tasks?instanceId=&elementId=` → `HistoryReader.GetUserTasks`): задача на каждый приход токена — статус (ждёт исполнителя, в работе, выполнена), когда создана, исполнитель и время назначения (`claimed_at`; у задачи, назначенной при создании, — время создания), кто может взять (кандидаты; без них — любой пользователь или только исполнитель), кто и когда выполнил, форма. Как и правила, задачи берутся по всем экземплярам элемента на диаграмме. Истории взятий и возвратов нет: после `unclaim` прежний исполнитель не виден.
   - У Business Rule Task кнопка «Показать сработавшие правила» (`GET /ui/history/api/rules?instanceId=&elementId=`): окно с таблицей решения, строки сработавших правил подсвечиваются по `data-row-id`; несколько вызовов переключаются кнопками.
+- **Вкладка «Термокарта»** (`#/heatmap?process=&from=&to=`, время локальное, как в полях `datetime-local`; в API уходит RFC 3339): BPMN процесса рисуется отдельным bpmn-js, повторно не импортируется, если процесс тот же; метрика (среднее, максимум, сумма, проходы) перекрашивает без запроса. Цвет — доля от самого долгого элемента, линейно по шкале `HEAT_COLORS` (бледно-жёлтый → тёмно-красный; градиент легенды в `style.css` — те же цвета); заливка ставится стилем первого элемента `.djs-visual`, у раскрытого подпроцесса полупрозрачная. Sequence flow не красятся и не входят в таблицу: проходятся мгновенно и сжимали бы шкалу. Бейдж — overlay над левым верхним углом, `title` со всеми цифрами. Кнопка «Термокарта» есть у процесса на вкладке «Процессы».
 - **`webui.Register(mux, historyReader)`** — консоль `/ui/` и история `/ui/history/` (статика через `go:embed`, чистый JS без сборки). Консоль работает поверх `httpapi` (`Register` и `RegisterUserTasks`), поэтому они на том же mux. Ссылки меню абсолютные (`/ui/#/processes`), одинаковые на обеих страницах. В демо `/` ведёт на `/ui/`.
   - Вкладка и фильтры — в адресе после `#`: `#/processes`, `#/start?process=X`, `#/instances?process=X&status=failed&key=K`, `#/tasks?user=bob&groups=managers,admins`. Ссылку на отфильтрованный список можно передать, «назад» в браузере работает.
   - **Процессы:** список с числом выполняющихся, завершённых и упавших экземпляров (число — ссылка на отфильтрованный список), схема процесса, переход к запуску.

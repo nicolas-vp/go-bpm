@@ -3,6 +3,8 @@
 //   - GET /api/v1/processes/{name} - процесс с BPMN;
 //   - POST /api/v1/processes/{name}/instances - запустить экземпляр процесса, тело {"variables": {...}, "businessKey": "..."},
 //     ответ {"id": "<instance id>"};
+//   - GET /api/v1/processes/{name}/heatmap?from=&to=&limit= - термокарта: длительности элементов процесса по истории
+//     экземпляров, запущенных в [from, to) (RFC 3339, необязательны), limit - сколько последних экземпляров взять;
 //   - GET /api/v1/instances?processName=&status=&businessKey=&limit=&before= - экземпляры от последних запущенных,
 //     before - id последнего экземпляра предыдущей страницы;
 //   - GET /api/v1/instances/{id} - экземпляр: тип процесса, бизнес-ключ, статус, когда запущен и обновлён;
@@ -19,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -40,6 +43,7 @@ type HistoryReader interface {
 	GetInstance(ctx context.Context, instanceUid uuid.UUID) (*engine.Instance, error)
 	ListInstances(ctx context.Context, filter engine.InstanceFilter) ([]engine.Instance, error)
 	CountInstances(ctx context.Context) ([]engine.InstanceCount, error)
+	GetHeatmap(ctx context.Context, filter engine.HeatmapFilter) (*engine.Heatmap, error)
 }
 
 // ProcessSummary - процесс в списке: Instances - число экземпляров по статусам, без дочерних встроенных подпроцессов
@@ -77,6 +81,7 @@ func Register(mux *http.ServeMux, processes ProcessStarter, history HistoryReade
 	mux.HandleFunc("GET /api/v1/processes", listProcessesHandler(processes, history))
 	mux.HandleFunc("GET /api/v1/processes/{name}", processHandler(processes))
 	mux.HandleFunc("POST /api/v1/processes/{name}/instances", startHandler(processes))
+	mux.HandleFunc("GET /api/v1/processes/{name}/heatmap", heatmapHandler(history))
 	mux.HandleFunc("GET /api/v1/instances", listInstancesHandler(history))
 	mux.HandleFunc("GET /api/v1/instances/{id}", instanceHandler(history))
 	mux.HandleFunc("GET /api/v1/instances/{id}/history", historyHandler(history))
@@ -146,6 +151,42 @@ func startHandler(processes ProcessStarter) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, StartResponse{Id: id})
+	}
+}
+
+func heatmapHandler(history HistoryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		filter := engine.HeatmapFilter{ProcessName: r.PathValue("name")}
+		for name, bound := range map[string]*time.Time{"from": &filter.From, "to": &filter.To} {
+			if value := query.Get(name); value != "" {
+				parsed, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, name+": "+err.Error())
+					return
+				}
+				*bound = parsed
+			}
+		}
+		if value := query.Get("limit"); value != "" {
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 {
+				writeError(w, http.StatusBadRequest, "limit: positive integer expected")
+				return
+			}
+			filter.Limit = limit
+		}
+		heatmap, err := history.GetHeatmap(r.Context(), filter)
+		if errors.Is(err, engine.ErrProcessNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if err != nil {
+			slog.ErrorContext(r.Context(), "heatmap", "process", filter.ProcessName, "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, heatmap)
 	}
 }
 

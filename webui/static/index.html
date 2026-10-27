@@ -16,6 +16,7 @@
       <a href="/ui/#/start" data-tab="start">Запуск</a>
       <a href="/ui/#/instances" data-tab="instances">Экземпляры</a>
       <a href="/ui/#/tasks" data-tab="tasks">Задачи</a>
+      <a href="/ui/#/heatmap" data-tab="heatmap">Термокарта</a>
     </nav>
   </header>
 
@@ -147,6 +148,66 @@
         </div>
       </div>
       <p id="tasks-hint" class="muted">Введите пользователя или группы — появится очередь задач, которые можно взять, а у пользователя ещё и его задачи в работе.</p>
+    </section>
+
+    <!-- Термокарта: длительности элементов процесса по истории экземпляров, запущенных в период -->
+    <section id="tab-heatmap" class="tab" hidden>
+      <h2>Термокарта</h2>
+      <form id="heatmap-form" class="filters">
+        <label class="field">
+          <span>Процесс</span>
+          <select id="heatmap-process" required></select>
+        </label>
+        <label class="field">
+          <span>Запущены с <span class="muted">необязательно</span></span>
+          <input id="heatmap-from" type="datetime-local" step="1">
+        </label>
+        <label class="field">
+          <span>по <span class="muted">необязательно</span></span>
+          <input id="heatmap-to" type="datetime-local" step="1">
+        </label>
+        <button class="button" type="submit">Построить</button>
+      </form>
+      <div id="heatmap-result" hidden>
+        <div class="section-head heatmap-head">
+          <p id="heatmap-summary" class="muted"></p>
+          <label class="field heatmap-metric">
+            <span>Цвет по</span>
+            <select id="heatmap-metric">
+              <option value="avg_ms">среднему времени</option>
+              <option value="max_ms">максимальному времени</option>
+              <option value="total_ms">суммарному времени</option>
+              <option value="count">числу проходов</option>
+            </select>
+          </label>
+        </div>
+        <div class="heatmap-legend">
+          <span id="heatmap-legend-min"></span>
+          <span class="heatmap-scale" aria-hidden="true"></span>
+          <span id="heatmap-legend-max"></span>
+          <span class="heatmap-none" aria-hidden="true"></span>
+          <span class="muted">нет проходов</span>
+        </div>
+        <div id="heatmap-diagram" class="diagram diagram-tall"></div>
+        <h3>Элементы</h3>
+        <div class="table-wrap">
+          <table class="table table-rows">
+            <thead>
+              <tr>
+                <th>Элемент</th>
+                <th class="num">Проходов</th>
+                <th class="num">Ждут</th>
+                <th class="num">Среднее</th>
+                <th class="num">Мин</th>
+                <th class="num">Макс</th>
+                <th class="num">Суммарно</th>
+              </tr>
+            </thead>
+            <tbody id="heatmap-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <p id="heatmap-hint" class="muted">Выберите процесс и, если нужно, период запуска экземпляров. Цвет элемента на схеме — сколько он выполнялся: от прихода токена до ухода, по истории экземпляров.</p>
     </section>
   </main>
 

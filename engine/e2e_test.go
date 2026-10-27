@@ -2,7 +2,9 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -93,6 +95,34 @@ func TestEndToEnd(t *testing.T) {
 		if len(found) != 1 || found[0].InstanceUid != id {
 			t.Errorf("%s: list instances = %+v", name, found)
 		}
+
+		// термокарта: элементы процесса и его встроенных подпроцессов, каждый завершился хотя бы раз;
+		// экземпляры - все экземпляры процесса, в том числе вызванные callActivity другого процесса
+		heatmap, err := reader.GetHeatmap(ctx, engine.HeatmapFilter{ProcessName: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ofProcess, err := reader.ListInstances(ctx, engine.InstanceFilter{ProcessName: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if heatmap.Instances != len(ofProcess) || heatmap.Truncated || len(heatmap.Elements) == 0 {
+			t.Errorf("%s: heatmap = %+v", name, heatmap)
+		}
+		for _, element := range heatmap.Elements {
+			known := slices.ContainsFunc(slices.Collect(maps.Values(processes[name].Flows)), func(flow bpm.DeploymentProcess) bool {
+				return flow.Expressions[element.ElementId] != nil
+			})
+			if !known || element.Count == 0 || element.Active != 0 || element.MaxMs < element.AvgMs {
+				t.Errorf("%s: heatmap element = %+v", name, element)
+			}
+		}
+		if past, err := reader.GetHeatmap(ctx, engine.HeatmapFilter{ProcessName: name, To: instance.CreatedAt}); err != nil || past.Instances != 0 {
+			t.Errorf("%s: heatmap before start = %+v, err %v", name, past, err)
+		}
+	}
+	if _, err := reader.GetHeatmap(ctx, engine.HeatmapFilter{ProcessName: "unknown"}); !errors.Is(err, engine.ErrProcessNotFound) {
+		t.Errorf("heatmap of unknown process: err = %v", err)
 	}
 
 	// дочерние экземпляры (подпроцессы, callActivity) тоже завершены и наследуют бизнес-ключ

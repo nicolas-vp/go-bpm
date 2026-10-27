@@ -444,6 +444,78 @@ textarea:focus {
   overflow: hidden;
 }
 
+/* термокарта: цвета шкалы - HEAT_COLORS в app.js */
+.diagram-tall {
+  height: 560px;
+}
+
+.heatmap-head {
+  align-items: flex-end;
+  margin-bottom: 8px;
+}
+
+.heatmap-head p {
+  margin: 0 0 8px;
+}
+
+.heatmap-metric {
+  min-width: 220px;
+}
+
+.heatmap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap-scale {
+  width: 200px;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(to right, rgb(255, 243, 196), rgb(255, 196, 102), rgb(245, 120, 66), rgb(214, 40, 40), rgb(140, 0, 30));
+}
+
+.heatmap-none {
+  width: 14px;
+  height: 10px;
+  margin-left: 16px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.heat-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.heat-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+
+.djs-shape.heat-selected .djs-visual > :first-child {
+  stroke: var(--accent) !important;
+  stroke-width: 4px !important;
+}
+
 /* задачи */
 .cards {
   display: flex;

@@ -1,4 +1,4 @@
-// Консоль go-bpm: вкладки процессов, запуска, экземпляров и задач пользователей поверх /api/v1.
+// Консоль go-bpm: вкладки процессов, запуска, экземпляров, задач пользователей и термокарты поверх /api/v1.
 // Вкладка и её параметры живут в адресе после # (#/instances?process=X&status=failed), поэтому ссылки
 // на отфильтрованный список можно передать, а «назад» в браузере возвращает к прежнему виду.
 // История экземпляра - отдельная страница /ui/history/ с той же шапкой.
@@ -91,6 +91,7 @@
     processes = data.processes || [];
     fillProcessSelect(document.getElementById('start-process'), false);
     fillProcessSelect(document.getElementById('instances-process'), true);
+    fillProcessSelect(document.getElementById('heatmap-process'), false);
     return processes;
   }
 
@@ -115,6 +116,7 @@
     start: showStart,
     instances: showInstances,
     tasks: showTasks,
+    heatmap: showHeatmap,
   };
 
   // route разбирает адрес после #: "#/instances?status=failed" -> {tab: "instances", params}
@@ -181,6 +183,7 @@
         countCell(process, 'failed'),
         el('td', { className: 'row-actions' }, [
           el('button', { className: 'button-quiet', type: 'button', onclick: function () { showDiagram(process).catch(showError); } }, 'Схема'),
+          el('button', { className: 'button-quiet', type: 'button', onclick: function () { go('heatmap', { process: process.id }); } }, 'Термокарта'),
           el('button', { className: 'button', type: 'button', onclick: function () { go('start', { process: process.id }); } }, 'Запустить'),
         ]),
       ]));
@@ -211,15 +214,19 @@
     if (!viewer) {
       viewer = new BpmnJS({ container: '#diagram' });
     }
-    await viewer.importXML(data.bpmn);
-    // в файле может быть несколько процессов: показываем корень нужного, если он отдельный
-    var canvas = viewer.get('canvas');
-    var root = viewer.get('elementRegistry').get(process.id);
+    await importProcess(viewer, data.bpmn, process.id);
+    diagramBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // importProcess рисует BPMN; в файле может быть несколько процессов: показываем корень нужного, если он отдельный
+  async function importProcess(bpmnViewer, bpmn, processId) {
+    await bpmnViewer.importXML(bpmn);
+    var canvas = bpmnViewer.get('canvas');
+    var root = bpmnViewer.get('elementRegistry').get(processId);
     if (root && root.type === 'bpmn:Process' && canvas.getRootElement() !== root) {
       canvas.setRootElement(root);
     }
     canvas.zoom('fit-viewport');
-    diagramBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   // --- редактор переменных -----------------------------------------------------------------------
@@ -512,6 +519,279 @@
       });
       instancesBody.append(row);
     });
+  }
+
+  // --- термокарта --------------------------------------------------------------------------------
+
+  // процесс и период - в адресе (#/heatmap?process=X&from=2026-10-01T00:00&to=...): время локальное, как в полях
+  var heatmapForm = document.getElementById('heatmap-form');
+  var heatmapProcess = document.getElementById('heatmap-process');
+  var heatmapFrom = document.getElementById('heatmap-from');
+  var heatmapTo = document.getElementById('heatmap-to');
+  var heatmapMetric = document.getElementById('heatmap-metric');
+  var heatmapResult = document.getElementById('heatmap-result');
+  var heatmapBody = document.getElementById('heatmap-body');
+  // шкала от бледного к красному: доля от самого долгого элемента
+  var HEAT_COLORS = [[255, 243, 196], [255, 196, 102], [245, 120, 66], [214, 40, 40], [140, 0, 30]];
+  var heatmapViewer = null;
+  // heatmap - последний ответ API и процесс, BPMN которого нарисован: метрика меняется без запроса
+  var heatmap = { data: null, drawn: '', key: '' };
+
+  heatmapForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var params = { process: heatmapProcess.value };
+    if (heatmapFrom.value) params.from = heatmapFrom.value;
+    if (heatmapTo.value) params.to = heatmapTo.value;
+    // тот же адрес не вызовет hashchange: строим заново сами
+    if (new URLSearchParams(params).toString() === route().params.toString()) {
+      heatmap.key = '';
+      render();
+    } else {
+      go('heatmap', params);
+    }
+  });
+  heatmapMetric.addEventListener('change', function () {
+    paintHeatmap();
+  });
+
+  async function showHeatmap(params) {
+    if (processes.length === 0) {
+      await loadProcesses();
+    }
+    heatmapFrom.value = params.get('from') || '';
+    heatmapTo.value = params.get('to') || '';
+    var processId = params.get('process');
+    if (!processId) {
+      heatmapResult.hidden = true;
+      document.getElementById('heatmap-hint').hidden = false;
+      return;
+    }
+    heatmapProcess.value = processId;
+    // возврат на вкладку с тем же фильтром не перестраивает карту: схема уже нарисована
+    if (heatmap.key === params.toString() && heatmap.data) {
+      return;
+    }
+    var query = new URLSearchParams();
+    if (params.get('from')) query.set('from', new Date(params.get('from')).toISOString());
+    if (params.get('to')) query.set('to', new Date(params.get('to')).toISOString());
+    var path = '/processes/' + encodeURIComponent(processId);
+    var results = await Promise.all([
+      heatmap.drawn === processId ? null : api('GET', path),
+      api('GET', path + '/heatmap?' + query),
+    ]);
+    document.getElementById('heatmap-hint').hidden = true;
+    heatmapResult.hidden = false;
+    if (results[0]) {
+      if (!results[0].bpmn) {
+        throw new Error('У процесса ' + processId + ' нет BPMN');
+      }
+      // bpmn-js создаётся, когда контейнер видим
+      if (!heatmapViewer) {
+        heatmapViewer = new BpmnJS({ container: '#heatmap-diagram' });
+      }
+      heatmap.drawn = '';
+      await importProcess(heatmapViewer, results[0].bpmn, processId);
+      heatmap.drawn = processId;
+    }
+    heatmap.data = results[1];
+    heatmap.key = params.toString();
+    var summary = 'Экземпляров: ' + heatmap.data.instances;
+    if (heatmap.data.truncated) {
+      summary += ' — за период их больше, посчитаны последние запущенные';
+    }
+    if (heatmap.data.instances === 0) {
+      summary = 'За период экземпляров нет';
+    }
+    document.getElementById('heatmap-summary').textContent = summary;
+    paintHeatmap();
+  }
+
+  // paintHeatmap красит элементы схемы по выбранной метрике и заполняет таблицу
+  function paintHeatmap() {
+    if (!heatmap.data || !heatmapViewer) {
+      return;
+    }
+    var metric = heatmapMetric.value;
+    var registry = heatmapViewer.get('elementRegistry');
+    var overlays = heatmapViewer.get('overlays');
+    var canvas = heatmapViewer.get('canvas');
+    overlays.remove({ type: 'heat' });
+    registry.forEach(function (element) {
+      var visual = heatVisual(registry, element);
+      if (visual) {
+        heatStyle(visual, 'fill', null);
+        heatStyle(visual, 'fillOpacity', null);
+        heatLabel(visual, null);
+      }
+      canvas.removeMarker(element.id, 'heat-selected');
+    });
+
+    // переходы проходятся мгновенно: красим только фигуры, шкала - от самой долгой из них
+    var shapes = heatmap.data.elements.filter(function (timing) {
+      var element = registry.get(timing.element_id);
+      return element && !element.waypoints;
+    });
+    var top = shapes.reduce(function (acc, timing) { return Math.max(acc, timing[metric]); }, 0);
+    shapes.forEach(function (timing) {
+      var element = registry.get(timing.element_id);
+      var visual = heatVisual(registry, element);
+      if (visual) {
+        var share = top > 0 ? timing[metric] / top : 0;
+        heatStyle(visual, 'fill', heatColor(share));
+        // у раскрытого подпроцесса внутри свои элементы: заливка полупрозрачная
+        if (element.type === 'bpmn:SubProcess' && element.di && element.di.isExpanded) {
+          heatStyle(visual, 'fillOpacity', '0.35');
+        } else if (share > 0.6) {
+          heatLabel(visual, '#fff'); // на тёмно-красном чёрная подпись не читается
+        }
+      }
+      // бейдж над левым верхним углом: под событиями их подписи
+      overlays.add(element.id, 'heat', {
+        position: { top: -22, left: 0 },
+        html: el('div', { className: 'heat-badge', title: timingTitle(timing) }, metricText(timing[metric], metric)),
+      });
+    });
+    document.getElementById('heatmap-legend-min').textContent = metricText(0, metric);
+    document.getElementById('heatmap-legend-max').textContent = metricText(top, metric);
+    renderHeatmapTable(registry, metric);
+  }
+
+  // heatVisual - контур фигуры: первый элемент её рисунка (rect задачи, circle события, polygon шлюза)
+  function heatVisual(registry, element) {
+    if (!element || element.waypoints || element.type === 'label' || !element.businessObject) {
+      return null;
+    }
+    var gfx = registry.getGraphics(element);
+    return gfx ? gfx.querySelector('.djs-visual > :first-child') : null;
+  }
+
+  // heatLabel - цвет подписи внутри фигуры, null - как нарисовал bpmn-js
+  function heatLabel(visual, color) {
+    visual.parentNode.querySelectorAll('text').forEach(function (text) {
+      heatStyle(text, 'fill', color);
+    });
+  }
+
+  // heatStyle меняет свойство стиля SVG-узла, null возвращает прежнее. bpmn-js сам задаёт заливку в style:
+  // пустое значение вместо неё - чёрная фигура
+  function heatStyle(node, property, value) {
+    var saved = 'heat' + property;
+    if (value === null) {
+      if (saved in node.dataset) {
+        node.style[property] = node.dataset[saved];
+        delete node.dataset[saved];
+      }
+      return;
+    }
+    if (!(saved in node.dataset)) {
+      node.dataset[saved] = node.style[property];
+    }
+    node.style[property] = value;
+  }
+
+  function heatColor(share) {
+    var position = Math.min(Math.max(share, 0), 1) * (HEAT_COLORS.length - 1);
+    var index = Math.min(Math.floor(position), HEAT_COLORS.length - 2);
+    var t = position - index;
+    var from = HEAT_COLORS[index];
+    var to = HEAT_COLORS[index + 1];
+    return 'rgb(' + from.map(function (c, i) { return Math.round(c + (to[i] - c) * t); }).join(',') + ')';
+  }
+
+  function metricText(value, metric) {
+    return metric === 'count' ? String(value) : formatDuration(value);
+  }
+
+  function timingTitle(timing) {
+    var lines = [
+      'Проходов: ' + timing.count,
+      'Среднее: ' + formatDuration(timing.avg_ms),
+      'Мин: ' + formatDuration(timing.min_ms) + ', макс: ' + formatDuration(timing.max_ms),
+      'Суммарно: ' + formatDuration(timing.total_ms),
+    ];
+    if (timing.active) {
+      lines.push('Ждут сейчас: ' + timing.active);
+    }
+    return lines.join('\n');
+  }
+
+  function renderHeatmapTable(registry, metric) {
+    heatmapBody.replaceChildren();
+    // элементы без переходов, от больших значений метрики
+    var list = heatmap.data.elements.filter(function (timing) {
+      var element = registry.get(timing.element_id);
+      return !element || !element.waypoints;
+    }).sort(function (a, b) { return b[metric] - a[metric]; });
+    if (list.length === 0) {
+      heatmapBody.append(el('tr', {}, el('td', { colspan: 7, className: 'empty' }, 'Проходов нет')));
+      return;
+    }
+    list.forEach(function (timing) {
+      var element = registry.get(timing.element_id);
+      var name = element && element.businessObject && element.businessObject.name;
+      var row = el('tr', { tabindex: 0, title: 'Показать на схеме' }, [
+        el('td', {}, [
+          el('div', {}, [el('span', { className: 'heat-swatch', style: 'background:' + heatSwatch(registry, timing) }), name || timing.element_id]),
+          name ? el('code', { className: 'muted' }, timing.element_id) : null,
+        ]),
+        el('td', { className: 'num' }, timing.count),
+        el('td', { className: 'num' }, timing.active || el('span', { className: 'muted' }, '0')),
+        el('td', { className: 'num nowrap' }, formatDuration(timing.avg_ms)),
+        el('td', { className: 'num nowrap' }, formatDuration(timing.min_ms)),
+        el('td', { className: 'num nowrap' }, formatDuration(timing.max_ms)),
+        el('td', { className: 'num nowrap' }, formatDuration(timing.total_ms)),
+      ]);
+      row.addEventListener('click', function () { focusElement(timing.element_id); });
+      row.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+          focusElement(timing.element_id);
+        }
+      });
+      heatmapBody.append(row);
+    });
+  }
+
+  // heatSwatch - цвет элемента на схеме для строки таблицы
+  function heatSwatch(registry, timing) {
+    var visual = heatVisual(registry, registry.get(timing.element_id));
+    return visual && visual.style.fill ? visual.style.fill : 'transparent';
+  }
+
+  // focusElement выделяет элемент на схеме и прокручивает к нему
+  function focusElement(id) {
+    var canvas = heatmapViewer.get('canvas');
+    var element = heatmapViewer.get('elementRegistry').get(id);
+    if (!element) {
+      return;
+    }
+    heatmapViewer.get('elementRegistry').forEach(function (other) {
+      canvas.removeMarker(other.id, 'heat-selected');
+    });
+    canvas.addMarker(id, 'heat-selected');
+    canvas.scrollToElement(element);
+    document.getElementById('heatmap-diagram').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // formatDuration - миллисекунды коротко: 0,4 мс, 120 мс, 3,2 с, 5 мин 10 с, 2 ч 15 мин, 3 д 4 ч
+  function formatDuration(ms) {
+    if (!ms) {
+      return '0';
+    }
+    var number = function (value, digits) { return value.toLocaleString('ru-RU', { maximumFractionDigits: digits }); };
+    if (ms < 1000) {
+      return number(ms, ms < 10 ? 1 : 0) + ' мс';
+    }
+    var seconds = ms / 1000;
+    if (seconds < 60) {
+      return number(seconds, 1) + ' с';
+    }
+    // старшая единица и следующая за ней, если она не ноль
+    var units = [['д', 86400], ['ч', 3600], ['мин', 60], ['с', 1]];
+    var rest = Math.round(seconds);
+    var first = units.findIndex(function (unit) { return rest >= unit[1]; });
+    var high = Math.floor(rest / units[first][1]);
+    var low = Math.floor((rest - high * units[first][1]) / units[first + 1][1]);
+    return high + ' ' + units[first][0] + (low ? ' ' + low + ' ' + units[first + 1][0] : '');
   }
 
   // --- задачи ------------------------------------------------------------------------------------
