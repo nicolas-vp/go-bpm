@@ -98,6 +98,7 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 	mux := http.NewServeMux()
 	httpapi.Register(mux, bpmEngine, historyReader)
 	httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, bpmEngine))
+	httpapi.RegisterOperations(mux, engine.NewInstanceOperations(pool, bpmEngine))
 	webui.Register(mux, historyReader)
 	mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}

@@ -47,7 +47,7 @@ type TasksResponse struct {
 //   - POST /api/v1/tasks/{id}/complete {"userId": "...", "variables": {...}} - завершить, только исполнитель.
 //
 // claim, unclaim и complete отвечают 204. Ошибки: 400 - неверный запрос, 403 - пользователь не кандидат,
-// 404 - нет задачи, 409 - задача завершена, взята другим или не назначена пользователю
+// 404 - нет задачи, 409 - задача завершена, отменена, взята другим или не назначена пользователю
 func RegisterUserTasks(mux *http.ServeMux, tasks UserTasks) {
 	mux.HandleFunc("GET /api/v1/tasks", listTasksHandler(tasks))
 	mux.HandleFunc("GET /api/v1/tasks/{id}", taskHandler(tasks))
@@ -158,7 +158,8 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, taskUid uuid.UUID, e
 		writeError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, engine.ErrTaskNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, engine.ErrTaskCompleted), errors.Is(err, engine.ErrTaskClaimed), errors.Is(err, engine.ErrNotAssignee):
+	case errors.Is(err, engine.ErrTaskCompleted), errors.Is(err, engine.ErrTaskCancelled), errors.Is(err, engine.ErrTaskClaimed),
+		errors.Is(err, engine.ErrNotAssignee):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "user task", "task", taskUid, "path", r.URL.Path, "error", err)

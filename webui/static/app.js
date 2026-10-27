@@ -1,4 +1,4 @@
-// Консоль go-bpm: вкладки процессов, запуска, экземпляров, задач пользователей и термокарты поверх /api/v1.
+// Консоль go-bpm: вкладки процессов, запуска, экземпляров, задач пользователей, термокарты и динамики поверх /api/v1.
 // Вкладка и её параметры живут в адресе после # (#/instances?process=X&status=failed), поэтому ссылки
 // на отфильтрованный список можно передать, а «назад» в браузере возвращает к прежнему виду.
 // История экземпляра - отдельная страница /ui/history/ с той же шапкой.
@@ -6,7 +6,7 @@
   'use strict';
 
   var PAGE_SIZE = 20;
-  var STATUS_LABELS = { running: 'выполняется', completed: 'завершён', failed: 'упал' };
+  var STATUS_LABELS = { running: 'выполняется', completed: 'завершён', failed: 'упал', cancelled: 'отменён' };
   var errorBox = document.getElementById('error');
 
   // processes - процессы для выпадающих списков, загружаются один раз и по «Обновить»
@@ -92,6 +92,7 @@
     fillProcessSelect(document.getElementById('start-process'), false);
     fillProcessSelect(document.getElementById('instances-process'), true);
     fillProcessSelect(document.getElementById('heatmap-process'), false);
+    fillProcessSelect(document.getElementById('stats-process'), false);
     return processes;
   }
 
@@ -117,6 +118,7 @@
     instances: showInstances,
     tasks: showTasks,
     heatmap: showHeatmap,
+    stats: showStats,
   };
 
   // route разбирает адрес после #: "#/instances?status=failed" -> {tab: "instances", params}
@@ -169,7 +171,7 @@
     await loadProcesses();
     processesBody.replaceChildren();
     if (processes.length === 0) {
-      processesBody.append(el('tr', {}, el('td', { colspan: 5, className: 'empty' }, 'Процессов нет')));
+      processesBody.append(el('tr', {}, el('td', { colspan: 6, className: 'empty' }, 'Процессов нет')));
       return;
     }
     processes.forEach(function (process) {
@@ -181,6 +183,7 @@
         countCell(process, 'running'),
         countCell(process, 'completed'),
         countCell(process, 'failed'),
+        countCell(process, 'cancelled'),
         el('td', { className: 'row-actions' }, [
           el('button', { className: 'button-quiet', type: 'button', onclick: function () { showDiagram(process).catch(showError); } }, 'Схема'),
           el('button', { className: 'button-quiet', type: 'button', onclick: function () { go('heatmap', { process: process.id }); } }, 'Термокарта'),
@@ -519,6 +522,384 @@
       });
       instancesBody.append(row);
     });
+  }
+
+  // --- динамика ----------------------------------------------------------------------------------
+
+  // процесс и период - в адресе (#/stats?process=X&days=30); дни режутся в часовом поясе браузера
+  var statsForm = document.getElementById('stats-form');
+  var statsProcess = document.getElementById('stats-process');
+  var statsDays = document.getElementById('stats-days');
+  var statsTooltip = document.getElementById('stats-tooltip');
+  var SVG = 'http://www.w3.org/2000/svg';
+  // исходы - в порядке слоёв столбца снизу вверх; цвета проверены на различимость при дальтонизме
+  // (валидатор палитры dataviz), у жёлтого контраст с фоном ниже 3:1 - поэтому легенда, подсказка и таблица
+  var OUTCOMES = [
+    { key: 'completed', label: 'завершены', color: '#2a78d6' },
+    { key: 'running', label: 'выполняются', color: '#eda100' },
+    { key: 'failed', label: 'упали', color: '#e34948' },
+    { key: 'cancelled', label: 'отменены', color: '#6250d6' },
+  ];
+  var DURATIONS = [
+    { key: 'median_ms', label: 'медиана', color: '#2a78d6' },
+    { key: 'p95_ms', label: 'p95', color: '#eb6834' },
+  ];
+  // stats - последний ответ: графики перерисовываются по ширине окна без запроса
+  var stats = null;
+
+  statsForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var params = { process: statsProcess.value, days: statsDays.value };
+    if (new URLSearchParams(params).toString() === route().params.toString()) {
+      render();
+    } else {
+      go('stats', params);
+    }
+  });
+
+  // графики рисуются в пикселях контейнера: при смене его ширины (окно, поворот телефона) перерисовываются
+  var drawnWidth = 0;
+  var resizeTimer = null;
+  new ResizeObserver(function (entries) {
+    var width = Math.round(entries[0].contentRect.width);
+    if (!stats || width === 0 || width === drawnWidth) {
+      return;
+    }
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(drawStats, 100);
+  }).observe(document.getElementById('stats-outcomes'));
+
+  async function showStats(params) {
+    if (processes.length === 0) {
+      await loadProcesses();
+    }
+    var processId = params.get('process');
+    statsDays.value = ['7', '30', '90', '365'].indexOf(params.get('days')) >= 0 ? params.get('days') : '30';
+    if (!processId) {
+      document.getElementById('stats-result').hidden = true;
+      document.getElementById('stats-hint').hidden = false;
+      return;
+    }
+    statsProcess.value = processId;
+    // период - целые дни: с полуночи (days - 1) дней назад до конца сегодняшнего
+    var days = Number(statsDays.value);
+    var to = new Date();
+    to.setHours(24, 0, 0, 0);
+    var from = new Date(to);
+    from.setDate(from.getDate() - days);
+    var query = new URLSearchParams({
+      from: from.toISOString(),
+      to: to.toISOString(),
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    });
+    var result = document.getElementById('stats-result');
+    // перезапрос держит прежний вид приглушённым, без скачка раскладки
+    result.classList.add('is-loading');
+    try {
+      stats = await api('GET', '/processes/' + encodeURIComponent(processId) + '/stats?' + query);
+    } finally {
+      result.classList.remove('is-loading');
+    }
+    document.getElementById('stats-hint').hidden = true;
+    result.hidden = false;
+    renderStatTiles(stats.total, processId);
+    drawStats();
+    renderStatsTable(stats.days);
+  }
+
+  function drawStats() {
+    drawnWidth = Math.round(document.getElementById('stats-outcomes').clientWidth);
+    renderLegend(document.getElementById('stats-legend-outcomes'), OUTCOMES, 'rect');
+    renderLegend(document.getElementById('stats-legend-durations'), DURATIONS, 'line');
+    drawOutcomes(document.getElementById('stats-outcomes'), stats.days);
+    drawDurations(document.getElementById('stats-durations'), stats.days);
+  }
+
+  function renderStatTiles(total, processId) {
+    var link = function (status) {
+      return '#/instances?' + new URLSearchParams({ process: processId, status: status });
+    };
+    var tiles = [
+      { label: 'Запущено', value: formatCount(total.started) },
+      { label: 'Завершено', value: formatCount(total.completed), share: total.started ? total.completed / total.started : null },
+      { label: 'Выполняются', value: formatCount(total.running), href: total.running ? link('running') : null },
+      { label: 'Упали', value: formatCount(total.failed), href: total.failed ? link('failed') : null, alert: total.failed > 0 },
+      { label: 'Отменены', value: formatCount(total.cancelled) },
+      { label: 'Медиана длительности', value: total.median_ms == null ? '—' : formatDuration(total.median_ms) },
+      { label: 'p95 длительности', value: total.p95_ms == null ? '—' : formatDuration(total.p95_ms) },
+    ];
+    var box = document.getElementById('stats-tiles');
+    box.replaceChildren();
+    tiles.forEach(function (tile) {
+      var value = el('div', { className: 'stat-value' + (tile.alert ? ' stat-alert' : '') }, tile.value);
+      box.append(el(tile.href ? 'a' : 'div', { className: 'stat-tile', href: tile.href }, [
+        el('div', { className: 'stat-label' }, tile.label),
+        value,
+        tile.share != null ? el('div', { className: 'stat-note' }, Math.round(tile.share * 100) + '% запущенных') : null,
+      ]));
+    });
+  }
+
+  function renderLegend(box, series, shape) {
+    box.replaceChildren();
+    series.forEach(function (item) {
+      box.append(el('span', { className: 'legend-item' }, [
+        el('span', { className: 'legend-key legend-key-' + shape, style: 'background:' + item.color }),
+        item.label,
+      ]));
+    });
+  }
+
+  function renderStatsTable(days) {
+    var body = document.getElementById('stats-body');
+    body.replaceChildren();
+    // новые дни сверху: обычно смотрят вчера и сегодня
+    days.slice().reverse().forEach(function (day) {
+      var zero = function (value) { return value ? formatCount(value) : el('span', { className: 'muted' }, '0'); };
+      body.append(el('tr', {}, [
+        el('td', { className: 'nowrap' }, formatDay(day.day, true)),
+        el('td', { className: 'num' }, zero(day.started)),
+        el('td', { className: 'num' }, zero(day.completed)),
+        el('td', { className: 'num' }, zero(day.running)),
+        el('td', { className: 'num' }, day.failed ? el('span', { className: 'count-failed' }, formatCount(day.failed)) : zero(0)),
+        el('td', { className: 'num' }, zero(day.cancelled)),
+        el('td', { className: 'num nowrap' }, day.median_ms == null ? el('span', { className: 'muted' }, '—') : formatDuration(day.median_ms)),
+        el('td', { className: 'num nowrap' }, day.p95_ms == null ? el('span', { className: 'muted' }, '—') : formatDuration(day.p95_ms)),
+      ]));
+    });
+  }
+
+  // --- графики: SVG без библиотек ----------------------------------------------------------------
+
+  var CHART = { height: 220, top: 12, right: 12, bottom: 28, left: 56 };
+
+  function svg(tag, attrs) {
+    var node = document.createElementNS(SVG, tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      node.setAttribute(key, attrs[key]);
+    });
+    return node;
+  }
+
+  // DURATION_STEPS - шаги оси длительности, кратные единицам времени: 15 мин, 1 ч, 6 ч, а не 5 ч 33 мин
+  var DURATION_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 10e3, 15e3, 30e3, 60e3, 120e3, 300e3, 600e3,
+    900e3, 1800e3, 3600e3, 7200e3, 10800e3, 21600e3, 43200e3, 86400e3, 172800e3, 604800e3];
+
+  // chartFrame - SVG по ширине контейнера, сетка и подписи осей. format - подпись значения оси Y,
+  // steps - допустимые шаги делений (по умолчанию 1, 2, 2,5, 5 × 10ⁿ)
+  function chartFrame(box, days, top, format, steps) {
+    var width = Math.max(box.clientWidth, 280);
+    var plot = { x: CHART.left, y: CHART.top, width: width - CHART.left - CHART.right, height: CHART.height - CHART.top - CHART.bottom };
+    var root = svg('svg', { width: width, height: CHART.height, viewBox: '0 0 ' + width + ' ' + CHART.height, role: 'img' });
+    var ticks = niceTicks(top, steps);
+    var max = ticks[ticks.length - 1] || 1;
+    ticks.forEach(function (tick) {
+      var y = plot.y + plot.height - tick / max * plot.height;
+      root.append(svg('line', { x1: plot.x, x2: plot.x + plot.width, y1: y, y2: y, class: tick === 0 ? 'chart-baseline' : 'chart-grid' }));
+      var label = svg('text', { x: plot.x - 8, y: y + 4, 'text-anchor': 'end', class: 'chart-axis' });
+      label.textContent = format(tick);
+      root.append(label);
+    });
+    var band = plot.width / days.length;
+    // подписи дней - не чаще, чем помещаются
+    var every = Math.ceil(44 / band);
+    days.forEach(function (day, i) {
+      if ((days.length - 1 - i) % every !== 0) {
+        return; // последний день подписан всегда
+      }
+      var label = svg('text', { x: plot.x + band * (i + 0.5), y: CHART.height - 8, 'text-anchor': 'middle', class: 'chart-axis' });
+      label.textContent = formatDay(day.day, false);
+      root.append(label);
+    });
+    box.replaceChildren(root);
+    return { root: root, plot: plot, band: band, max: max };
+  }
+
+  function drawOutcomes(box, days) {
+    var top = days.reduce(function (acc, day) { return Math.max(acc, day.started); }, 0);
+    var frame = chartFrame(box, days, top, formatCount);
+    var plot = frame.plot;
+    var barWidth = Math.max(Math.min(24, frame.band * 0.7), 2);
+    days.forEach(function (day, i) {
+      var x = plot.x + frame.band * (i + 0.5) - barWidth / 2;
+      var base = plot.y + plot.height;
+      var segments = OUTCOMES.filter(function (outcome) { return day[outcome.key] > 0; });
+      segments.forEach(function (outcome, j) {
+        var height = day[outcome.key] / frame.max * plot.height;
+        // 2px фона между слоями столбца; верхний слой со скруглёнными углами
+        var gap = j < segments.length - 1 ? 2 : 0;
+        var drawn = Math.max(height - gap, 1);
+        var y = base - height;
+        frame.root.append(svg('path', {
+          d: j === segments.length - 1 ? roundedTop(x, y, barWidth, drawn, Math.min(4, barWidth / 2, drawn)) : rectPath(x, y + gap, barWidth, drawn),
+          fill: outcome.color,
+        }));
+        base -= height;
+      });
+      // попадание - вся полоса дня, а не закрашенные пиксели
+      var hit = svg('rect', { x: plot.x + frame.band * i, y: plot.y, width: frame.band, height: plot.height, class: 'chart-hit', tabindex: 0 });
+      var show = function (event) {
+        hit.classList.add('is-active');
+        showTooltip(event, formatDay(day.day, true), OUTCOMES.map(function (outcome) {
+          return { color: outcome.color, label: outcome.label, value: formatCount(day[outcome.key]) };
+        }).concat([{ label: 'запущено', value: formatCount(day.started) }]), 'rect');
+      };
+      hit.addEventListener('pointermove', show);
+      hit.addEventListener('focus', show);
+      hit.addEventListener('pointerleave', function () { hit.classList.remove('is-active'); hideTooltip(); });
+      hit.addEventListener('blur', function () { hit.classList.remove('is-active'); hideTooltip(); });
+      frame.root.append(hit);
+    });
+  }
+
+  function drawDurations(box, days) {
+    var top = days.reduce(function (acc, day) {
+      return Math.max(acc, day.median_ms || 0, day.p95_ms || 0);
+    }, 0);
+    var frame = chartFrame(box, days, top, formatDuration, DURATION_STEPS);
+    var plot = frame.plot;
+    var pointX = function (i) { return plot.x + frame.band * (i + 0.5); };
+    var pointY = function (value) { return plot.y + plot.height - value / frame.max * plot.height; };
+    // перекрестие под линиями: ближайший день под указателем, подсказка со всеми сериями
+    var crosshair = svg('line', { y1: plot.y, y2: plot.y + plot.height, class: 'chart-crosshair', visibility: 'hidden' });
+    frame.root.append(crosshair);
+    DURATIONS.forEach(function (series) {
+      // дни без завершённых рвут линию: соединять через них - выдумывать значения
+      var path = '';
+      var previous = false;
+      days.forEach(function (day, i) {
+        var value = day[series.key];
+        if (value == null) {
+          previous = false;
+          return;
+        }
+        path += (previous ? 'L' : 'M') + pointX(i).toFixed(1) + ' ' + pointY(value).toFixed(1);
+        previous = true;
+        // одиночную точку без соседей линией не нарисовать - ставим маркер
+        var next = days[i + 1];
+        var prev = days[i - 1];
+        if ((!prev || prev[series.key] == null) && (!next || next[series.key] == null)) {
+          frame.root.append(svg('circle', { cx: pointX(i), cy: pointY(value), r: 4, fill: series.color, class: 'chart-dot' }));
+        }
+      });
+      if (path) {
+        frame.root.append(svg('path', { d: path, stroke: series.color, class: 'chart-line' }));
+      }
+    });
+    var markers = DURATIONS.map(function (series) {
+      var dot = svg('circle', { r: 4, fill: series.color, class: 'chart-dot', visibility: 'hidden' });
+      frame.root.append(dot);
+      return dot;
+    });
+    var hit = svg('rect', { x: plot.x, y: plot.y, width: plot.width, height: plot.height, class: 'chart-hit', tabindex: 0 });
+    var focusIndex = days.length - 1;
+    var showDay = function (i, event) {
+      var day = days[i];
+      var x = pointX(i);
+      crosshair.setAttribute('x1', x);
+      crosshair.setAttribute('x2', x);
+      crosshair.setAttribute('visibility', 'visible');
+      DURATIONS.forEach(function (series, j) {
+        var value = day[series.key];
+        markers[j].setAttribute('visibility', value == null ? 'hidden' : 'visible');
+        if (value != null) {
+          markers[j].setAttribute('cx', x);
+          markers[j].setAttribute('cy', pointY(value));
+        }
+      });
+      showTooltip(event, formatDay(day.day, true), DURATIONS.map(function (series) {
+        return { color: series.color, label: series.label, value: day[series.key] == null ? '—' : formatDuration(day[series.key]) };
+      }).concat([{ label: 'завершено', value: formatCount(day.completed) }]), 'line');
+    };
+    var hide = function () {
+      crosshair.setAttribute('visibility', 'hidden');
+      markers.forEach(function (dot) { dot.setAttribute('visibility', 'hidden'); });
+      hideTooltip();
+    };
+    hit.addEventListener('pointermove', function (event) {
+      var rect = hit.getBoundingClientRect();
+      focusIndex = Math.min(Math.max(Math.floor((event.clientX - rect.left) / frame.band), 0), days.length - 1);
+      showDay(focusIndex, event);
+    });
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('blur', hide);
+    hit.addEventListener('focus', function (event) { showDay(focusIndex, event); });
+    // с клавиатуры день выбирается стрелками
+    hit.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        focusIndex = Math.min(Math.max(focusIndex + (event.key === 'ArrowLeft' ? -1 : 1), 0), days.length - 1);
+        showDay(focusIndex, event);
+      }
+    });
+    frame.root.append(hit);
+  }
+
+  function rectPath(x, y, width, height) {
+    return 'M' + x + ' ' + y + 'h' + width + 'v' + height + 'h' + -width + 'z';
+  }
+
+  // roundedTop - столбец со скруглённым верхом и прямым основанием
+  function roundedTop(x, y, width, height, r) {
+    return 'M' + x + ' ' + (y + height) + 'V' + (y + r) + 'Q' + x + ' ' + y + ' ' + (x + r) + ' ' + y +
+      'H' + (x + width - r) + 'Q' + (x + width) + ' ' + y + ' ' + (x + width) + ' ' + (y + r) + 'V' + (y + height) + 'Z';
+  }
+
+  // niceTicks - круглые деления оси от нуля: 0, 5, 10, 15 или 0, 200, 400; около четырёх делений
+  function niceTicks(top, steps) {
+    if (!(top > 0)) {
+      return [0, 1];
+    }
+    var rough = top / 4;
+    var power = Math.pow(10, Math.floor(Math.log10(rough)));
+    var step = (steps || [1, 2, 2.5, 5, 10].map(function (m) { return m * power; })).find(function (s) { return s >= rough; }) ||
+      Math.ceil(rough / steps[steps.length - 1]) * steps[steps.length - 1];
+    var ticks = [];
+    for (var value = 0; value < top + step / 2; value += step) {
+      ticks.push(value);
+    }
+    if (ticks[ticks.length - 1] < top) {
+      ticks.push(ticks[ticks.length - 1] + step);
+    }
+    return ticks;
+  }
+
+  function showTooltip(event, title, rows, shape) {
+    statsTooltip.replaceChildren(el('div', { className: 'tooltip-title' }, title));
+    rows.forEach(function (row) {
+      statsTooltip.append(el('div', { className: 'tooltip-row' }, [
+        row.color ? el('span', { className: 'legend-key legend-key-' + shape, style: 'background:' + row.color }) : el('span', { className: 'legend-key' }),
+        el('span', { className: 'tooltip-value' }, row.value),
+        el('span', { className: 'tooltip-label' }, row.label),
+      ]));
+    });
+    statsTooltip.hidden = false;
+    var target = event && event.clientX !== undefined ? { x: event.clientX, y: event.clientY } : null;
+    if (!target) {
+      var rect = event.target.getBoundingClientRect();
+      target = { x: rect.left + rect.width / 2, y: rect.top };
+    }
+    var width = statsTooltip.offsetWidth;
+    var left = target.x + 14 + width > window.innerWidth - 8 ? target.x - 14 - width : target.x + 14;
+    statsTooltip.style.left = Math.max(8, left) + 'px';
+    statsTooltip.style.top = Math.max(8, target.y - statsTooltip.offsetHeight - 8) + 'px';
+  }
+
+  function hideTooltip() {
+    statsTooltip.hidden = true;
+  }
+
+  function formatCount(value) {
+    return Number(value || 0).toLocaleString('ru-RU');
+  }
+
+  // formatDay - "2026-10-27" -> "27.10" на оси, "пн, 27 окт. 2026" в подсказке и таблице
+  function formatDay(day, long) {
+    var parts = day.split('-').map(Number);
+    var date = new Date(parts[0], parts[1] - 1, parts[2]);
+    return long
+      ? date.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+      : date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
   }
 
   // --- термокарта --------------------------------------------------------------------------------

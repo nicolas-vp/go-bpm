@@ -27,12 +27,16 @@ import (
 const (
 	UserTaskCreated   = "created"
 	UserTaskCompleted = "completed"
+	// UserTaskCancelled - экземпляр задачи отменён, выполнить её нельзя
+	UserTaskCancelled = "cancelled"
 )
 
 var (
 	ErrTaskNotFound = errors.New("user task not found")
 	// ErrTaskCompleted - задача уже завершена
 	ErrTaskCompleted = errors.New("user task is already completed")
+	// ErrTaskCancelled - экземпляр задачи отменён
+	ErrTaskCancelled = errors.New("user task is cancelled")
 	// ErrTaskClaimed - задачу уже взял в работу другой пользователь
 	ErrTaskClaimed = errors.New("user task is claimed by another user")
 	// ErrNotCandidate - пользователь не кандидат задачи: его нет в candidateUsers и ни одной его группы в candidateGroups
@@ -264,7 +268,7 @@ func (u *UserTaskService) ListTasks(ctx context.Context, filter TaskFilter) ([]U
 	switch status {
 	case "":
 		status = UserTaskCreated
-	case UserTaskCreated, UserTaskCompleted:
+	case UserTaskCreated, UserTaskCompleted, UserTaskCancelled:
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrInvalidTaskStatus, filter.Status)
 	}
@@ -381,7 +385,11 @@ func lockTask(ctx context.Context, tx pgx.Tx, taskUid uuid.UUID) (*lockedTask, e
 	if err != nil {
 		return nil, fmt.Errorf("user task: lock: %w", err)
 	}
-	if task.status != UserTaskCreated {
+	switch task.status {
+	case UserTaskCreated:
+	case UserTaskCancelled:
+		return nil, fmt.Errorf("user task %s: %w", taskUid, ErrTaskCancelled)
+	default:
 		return nil, fmt.Errorf("user task %s: %w", taskUid, ErrTaskCompleted)
 	}
 	return &task, nil

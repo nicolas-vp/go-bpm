@@ -57,6 +57,11 @@ func (q *fakeQueue) CancelByKeyTx(_ context.Context, _ queue.Tx, kind, key strin
 	return nil
 }
 
+// RetryFailedTx - упавших задач в фейковой очереди нет
+func (q *fakeQueue) RetryFailedTx(_ context.Context, _ queue.Tx, id int64, _ []byte) error {
+	return fmt.Errorf("task %d: %w", id, queue.ErrNotFailed)
+}
+
 // popKind достаёт первую задачу вида kind: порядок задач разных видов в очереди не гарантирован
 func (q *fakeQueue) popKind(t *testing.T, kind string) queue.Task {
 	t.Helper()

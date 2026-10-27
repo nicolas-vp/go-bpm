@@ -23,6 +23,7 @@
       <a href="/ui/#/instances" aria-current="page">Экземпляры</a>
       <a href="/ui/#/tasks">Задачи</a>
       <a href="/ui/#/heatmap">Термокарта</a>
+      <a href="/ui/#/stats">Динамика</a>
     </nav>
   </header>
 
@@ -31,14 +32,25 @@
       <div id="parent" class="parent" hidden></div>
       <div id="info" class="info">Экземпляр не выбран — откройте его в разделе <a href="/ui/#/instances">Экземпляры</a></div>
     </div>
+    <div id="instance-actions" class="instance-actions" hidden>
+      <button id="cancel-instance" class="button-danger" type="button">Отменить экземпляр</button>
+      <span id="cancel-confirm" class="cancel-confirm" hidden>
+        <span>Отменить экземпляр и все дочерние? Задачи очереди и пользователей будут сняты.</span>
+        <button id="cancel-yes" class="button-danger" type="button">Да, отменить</button>
+        <button id="cancel-no" class="button-quiet" type="button">Нет</button>
+      </span>
+    </div>
     <div class="legend">
       <span><i class="swatch swatch-completed"></i>пройдено</span>
       <span><i class="swatch swatch-active"></i>выполняется</span>
       <span><i class="swatch swatch-terminated"></i>прервано</span>
+      <span><i class="swatch swatch-failed"></i>упало</span>
       <span class="hint">клик по элементу — переменные и подпроцессы</span>
     </div>
   </section>
   <div id="error" class="error" hidden></div>
+  <!-- упавшие задачи экземпляра и его дочерних экземпляров: перезапуск как есть или с исправленными переменными -->
+  <section id="failures" class="failures" hidden></section>
 
   <div class="workspace">
     <main id="canvas" class="canvas"></main>
@@ -69,6 +81,27 @@
     <div id="rules-message" class="rules-message" hidden></div>
     <pre id="rules-result" class="vars rules-result" hidden></pre>
     <div id="rules-canvas" class="rules-canvas"></div>
+  </dialog>
+
+  <dialog id="retry" class="dialog" aria-labelledby="retry-title">
+    <form id="retry-form" method="dialog">
+      <header class="panel-head">
+        <div>
+          <div id="retry-title" class="panel-title">Исправить переменные и повторить</div>
+          <div id="retry-subtitle" class="panel-type"></div>
+        </div>
+        <button id="retry-close" class="panel-close" type="button" aria-label="Закрыть">×</button>
+      </header>
+      <div class="dialog-body">
+        <p class="muted">Переменные токена, с которыми шаг упал. Задача повторится с исправленными, попытки — с нуля.</p>
+        <textarea id="retry-vars" class="vars-json" rows="14" spellcheck="false"></textarea>
+        <div id="retry-error" class="error" hidden></div>
+      </div>
+      <footer class="actions dialog-foot">
+        <button id="retry-cancel" class="button-quiet" type="button">Отмена</button>
+        <button class="button" type="submit">Повторить</button>
+      </footer>
+    </form>
   </dialog>
 
   <script src="/ui/static/vendor/bpmn-js-18.31.0/bpmn-navigated-viewer.production.min.js"></script>

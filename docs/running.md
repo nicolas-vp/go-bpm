@@ -130,7 +130,7 @@ err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 | Таблица | Что хранит | Растёт |
 |---|---|---|
 | `bpm_queue` | задачи очереди: шаги, service task, таймеры | выполненные удаляются через `Retention` (7 дней), `failed` — никогда |
-| `bpm_process_instance` | экземпляры: процесс, бизнес-ключ, родитель, статус | строка на экземпляр, не удаляется |
+| `bpm_process_instance` | экземпляры: процесс, бизнес-ключ, родитель, статус (`running`, `completed`, `failed`, `cancelled`) | строка на экземпляр, не удаляется |
 | `bpm_history` | история элементов | строка на каждый элемент и переход, не удаляется |
 | `bpm_rules_history` | вызовы решений DMN | строка на вызов, не удаляется |
 | `bpm_user_task` | задачи пользователей | строка на каждый приход токена в user task, не удаляется |
@@ -301,33 +301,35 @@ order by id desc;
 У системных задач токен — в `payload -> 'message'`, у задач service task — в самом `payload`. В токене переменные
 (`Variables`), процесс, текущий элемент.
 
-### Перезапуск
+### Перезапуск и отмена
 
 1. Устраните причину: выкатите исправленный код или поправьте данные.
-2. Верните задачу в работу и экземпляру — статус `running`, в одной транзакции:
+2. Откройте историю экземпляра: над схемой — упавшие задачи с текстом ошибки. «Повторить» возвращает задачу в
+   очередь с первой попытки, экземпляр и его родители снова `running`. «Исправить переменные…» — то же, но
+   с переменными токена, исправленными в окне.
+3. Если экземпляр не нужен, «Отменить экземпляр»: снимаются его задачи очереди и задачи пользователей вместе
+   с дочерними экземплярами, статус — `cancelled`. Отменяется только корневой экземпляр.
+
+То же через API (`GET /api/v1/instances/{id}/failures`, `POST /api/v1/failures/{taskId}/retry`,
+`POST /api/v1/instances/{id}/cancel`, см. [API](api.md#упавшие-задачи-и-отмена-экземпляров)) и из Go —
+`engine.NewInstanceOperations(pool, e)`.
+
+Без консоли — тем же SQL, что делает `Retry`, в одной транзакции:
 
 ```sql
 begin;
 update bpm_queue
 set status = 'pending', attempt = 0, run_at = now(), last_error = null, updated_at = now()
-where id = 4;
+where id = 4 and status = 'failed';
 update bpm_process_instance
 set status = 'running', updated_at = now()
-where instance_uid = '01a17411-e6a3-73b7-a4cb-18dd2f5855b4';
+where instance_uid = '01a17411-e6a3-73b7-a4cb-18dd2f5855b4' and status = 'failed';
 commit;
 ```
 
-Если причина в данных, поправьте переменные в токене тем же `update`:
-
-```sql
-update bpm_queue
-set payload = jsonb_set(payload, '{message,Variables,amount}', '700'),
-    status = 'pending', attempt = 0, run_at = now(), last_error = null, updated_at = now()
-where id = 4;
-```
-
-Задачу подхватит опрос очереди в течение секунды. Если упал дочерний экземпляр, верните `running` и всем его
-родителям (`parent_instance_uid` по цепочке): они тоже помечены `failed`.
+Переменные в токене правятся тем же `update`
+(`payload = jsonb_set(payload, '{message,Variables,amount}', '700')`; у задач service task токен — сам `payload`),
+а родителям упавшего дочернего экземпляра нужно вернуть `running` по цепочке `parent_instance_uid`.
 
 ## Тесты
 

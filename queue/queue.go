@@ -33,6 +33,13 @@ on conflict (kind, key) where key is not null do nothing`
 
 	notifyQuery = `select pg_notify($1, $2)`
 
+	// retryFailedQuery возвращает упавшую задачу в работу с первой попытки; payload null - прежний
+	retryFailedQuery = `
+update bpm_queue
+set status = 'pending', attempt = 0, run_at = now(), last_error = null, payload = coalesce($2, payload), updated_at = now()
+where id = $1 and status = 'failed'
+returning kind`
+
 	cancelByKeyQuery = `
 update bpm_queue
 set status = 'cancelled', updated_at = now()
@@ -204,6 +211,23 @@ func (q *Queue) PushTx(ctx context.Context, tx Tx, task Task, opts ...PushOption
 func (q *Queue) CancelByKeyTx(ctx context.Context, tx Tx, kind, key string) error {
 	if _, err := tx.Exec(ctx, cancelByKeyQuery, kind, key); err != nil {
 		return fmt.Errorf("queue: cancel %s/%s: %w", kind, key, err)
+	}
+	return nil
+}
+
+// RetryFailedTx возвращает в работу задачу id, у которой кончились попытки: статус pending, попытки с нуля.
+// payload - новое содержимое задачи, nil - прежнее. Задача не failed или её нет - ErrNotFailed
+func (q *Queue) RetryFailedTx(ctx context.Context, tx Tx, id int64, payload []byte) error {
+	var kind string
+	err := tx.QueryRow(ctx, retryFailedQuery, id, payload).Scan(&kind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("queue: task %d: %w", id, ErrNotFailed)
+	}
+	if err != nil {
+		return fmt.Errorf("queue: retry %d: %w", id, err)
+	}
+	if _, err := tx.Exec(ctx, notifyQuery, notifyChannel, kind); err != nil {
+		return fmt.Errorf("queue: notify %s: %w", kind, err)
 	}
 	return nil
 }

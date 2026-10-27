@@ -36,6 +36,8 @@ type Queue interface {
 	PushTx(ctx context.Context, tx queue.Tx, task queue.Task, opts ...queue.PushOption) error
 	// CancelByKeyTx отменяет задачу, которая ещё не завершена: прерванная задача и таймеры
 	CancelByKeyTx(ctx context.Context, tx queue.Tx, kind, key string) error
+	// RetryFailedTx возвращает в работу упавшую задачу экземпляра, payload nil - прежний
+	RetryFailedTx(ctx context.Context, tx queue.Tx, id int64, payload []byte) error
 }
 
 // Config - параметры движка, нулевые значения заменяются значениями по умолчанию

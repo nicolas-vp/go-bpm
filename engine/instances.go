@@ -23,6 +23,8 @@ const (
 	InstanceCompleted = "completed"
 	// InstanceFailed - задача экземпляра упала без повторов (failed в bpm_queue) или упал дочерний экземпляр
 	InstanceFailed = "failed"
+	// InstanceCancelled - экземпляр отменён оператором (InstanceOperations.Cancel) вместе с дочерними
+	InstanceCancelled = "cancelled"
 )
 
 // Instance - экземпляр процесса из bpm_process_instance
@@ -41,7 +43,7 @@ type Instance struct {
 // InstanceFilter - условия выборки экземпляров, пустые поля не фильтруют
 type InstanceFilter struct {
 	ProcessName string
-	// Status - InstanceRunning, InstanceCompleted или InstanceFailed
+	// Status - InstanceRunning, InstanceCompleted, InstanceFailed или InstanceCancelled
 	Status string
 	// BusinessKey - точное совпадение; индекса по ключу нет, поэтому лучше вместе с ProcessName или Status
 	BusinessKey string
@@ -205,7 +207,7 @@ func (h *HistoryReader) GetInstance(ctx context.Context, instanceUid uuid.UUID) 
 // ListInstances возвращает экземпляры по фильтру, от последних запущенных к первым
 func (h *HistoryReader) ListInstances(ctx context.Context, filter InstanceFilter) ([]Instance, error) {
 	switch filter.Status {
-	case "", InstanceRunning, InstanceCompleted, InstanceFailed:
+	case "", InstanceRunning, InstanceCompleted, InstanceFailed, InstanceCancelled:
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrInvalidStatus, filter.Status)
 	}

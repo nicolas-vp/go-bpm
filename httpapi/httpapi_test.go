@@ -20,6 +20,7 @@ type fakeEngine struct {
 	businessKey string
 	filter      engine.InstanceFilter
 	heatmap     engine.HeatmapFilter
+	stats       engine.StatsFilter
 }
 
 func (f *fakeEngine) StartProcess(_ context.Context, processName string, variables map[string]any, opts ...engine.StartOption) (uuid.UUID, error) {
@@ -83,6 +84,17 @@ func (f *fakeEngine) GetHeatmap(_ context.Context, filter engine.HeatmapFilter) 
 	return &engine.Heatmap{ProcessName: "main", Instances: 1, Elements: []engine.ElementTiming{{ElementId: "task", Count: 1, AvgMs: 5}}}, nil
 }
 
+func (f *fakeEngine) GetProcessStats(_ context.Context, filter engine.StatsFilter) (*engine.ProcessStats, error) {
+	if filter.ProcessName != "main" {
+		return nil, fmt.Errorf("process %q: %w", filter.ProcessName, engine.ErrProcessNotFound)
+	}
+	if !filter.From.Before(filter.To) {
+		return nil, engine.ErrInvalidPeriod
+	}
+	f.stats = filter
+	return &engine.ProcessStats{ProcessName: "main", Total: engine.InstanceStats{Started: 3}}, nil
+}
+
 func TestAPI(t *testing.T) {
 	fake := &fakeEngine{id: uuid.New()}
 	mux := http.NewServeMux()
@@ -106,6 +118,11 @@ func TestAPI(t *testing.T) {
 		{method: "GET", path: "/api/v1/processes/other/heatmap", wantStatus: http.StatusNotFound, wantBody: "process not found"},
 		{method: "GET", path: "/api/v1/processes/main/heatmap?from=yesterday", wantStatus: http.StatusBadRequest, wantBody: "from"},
 		{method: "GET", path: "/api/v1/processes/main/heatmap?limit=-1", wantStatus: http.StatusBadRequest, wantBody: "limit"},
+		{method: "GET", path: "/api/v1/processes/main/stats?tz=Mars/Base", wantStatus: http.StatusBadRequest, wantBody: "tz"},
+		{method: "GET", path: "/api/v1/processes/main/stats?from=2026-10-27T00:00:00Z&to=2026-10-01T00:00:00Z", wantStatus: http.StatusBadRequest, wantBody: "invalid period"},
+		{method: "GET", path: "/api/v1/processes/other/stats", wantStatus: http.StatusNotFound, wantBody: "process not found"},
+		{method: "GET", path: "/api/v1/processes/main/stats?from=2026-10-01T00:00:00%2B03:00&to=2026-10-27T00:00:00%2B03:00&tz=Europe/Moscow",
+			wantStatus: http.StatusOK, wantBody: `"started":3`},
 		{method: "GET", path: "/api/v1/instances/" + fake.id.String() + "/history", wantStatus: http.StatusOK, wantBody: `"element_id":"start"`},
 		{method: "GET", path: "/api/v1/instances/" + fake.id.String() + "/history?withChildren=true", wantStatus: http.StatusOK, wantBody: `"element_id":"child"`},
 		{method: "GET", path: "/api/v1/instances/" + fake.id.String() + "/history?withChildren=maybe", wantStatus: http.StatusBadRequest, wantBody: "withChildren"},
@@ -136,6 +153,9 @@ func TestAPI(t *testing.T) {
 	}
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	if fake.stats.Location.String() != "Europe/Moscow" || !fake.stats.From.Equal(time.Date(2026, 9, 30, 21, 0, 0, 0, time.UTC)) {
+		t.Errorf("stats filter = %+v", fake.stats)
+	}
 	if !fake.heatmap.From.Equal(from) || !fake.heatmap.To.Equal(to) || fake.heatmap.Limit != 50 {
 		t.Errorf("heatmap filter = %+v, want from %s to %s limit 50", fake.heatmap, from, to)
 	}

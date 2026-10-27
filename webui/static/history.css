@@ -82,6 +82,74 @@
 .swatch-active { border: 2px dashed var(--accent); }
 .swatch-terminated { border: 2px solid var(--terminated); background: var(--completed); }
 .swatch-rule { background: var(--rule-hit); }
+.swatch-failed { border: 2px solid var(--terminated); background: var(--error-bg); }
+
+.info .status-failed { color: var(--error-text); }
+.info .status-cancelled { color: var(--muted); }
+
+/* отмена экземпляра: кнопка и подтверждение на месте */
+.instance-actions {
+  display: flex;
+  align-items: center;
+}
+
+.cancel-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+/* упавшие задачи над диаграммой */
+.failures {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  padding: 10px 16px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--error-bg);
+}
+
+.failures-title {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+.failure {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.failure-main {
+  flex: 1 1 400px;
+  min-width: 0;
+}
+
+.failure-main a {
+  color: var(--link);
+}
+
+.failure-error {
+  margin: 6px 0 0;
+  color: var(--error-text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.failure-actions {
+  display: flex;
+  gap: 8px;
+}
 
 .error {
   margin: 0;
@@ -278,6 +346,14 @@
   fill: var(--completed) !important;
   stroke: var(--terminated) !important;
   stroke-width: 3px !important;
+}
+
+/* элемент, на котором упал шаг */
+.djs-shape.bpm-failed .djs-visual > :nth-child(1) {
+  fill: var(--error-bg) !important;
+  stroke: var(--terminated) !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: none;
 }
 
 /* выбранный элемент: в viewer нет модуля outline, выделяем контур фигуры или линию */

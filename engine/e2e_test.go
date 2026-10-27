@@ -120,6 +120,27 @@ func TestEndToEnd(t *testing.T) {
 		if past, err := reader.GetHeatmap(ctx, engine.HeatmapFilter{ProcessName: name, To: instance.CreatedAt}); err != nil || past.Instances != 0 {
 			t.Errorf("%s: heatmap before start = %+v, err %v", name, past, err)
 		}
+
+		// динамика: все экземпляры процесса завершены, сумма по дням - итог
+		moscow, err := time.LoadLocation("Europe/Moscow")
+		if err != nil {
+			t.Fatal(err)
+		}
+		stats, err := reader.GetProcessStats(ctx, engine.StatsFilter{ProcessName: name, Location: moscow,
+			From: instance.CreatedAt.Add(-48 * time.Hour), To: time.Now().Add(time.Hour)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := 0
+		for _, day := range stats.Days {
+			started += day.Started
+		}
+		total := stats.Total
+		if total.Started != len(ofProcess) || total.Completed != total.Started || started != total.Started ||
+			total.MedianMs == nil || total.P95Ms == nil || *total.P95Ms < *total.MedianMs || len(stats.Days) < 3 ||
+			stats.Days[len(stats.Days)-1].Day != time.Now().Add(time.Hour).In(moscow).Format(time.DateOnly) {
+			t.Errorf("%s: stats = %+v", name, stats)
+		}
 	}
 	if _, err := reader.GetHeatmap(ctx, engine.HeatmapFilter{ProcessName: "unknown"}); !errors.Is(err, engine.ErrProcessNotFound) {
 		t.Errorf("heatmap of unknown process: err = %v", err)

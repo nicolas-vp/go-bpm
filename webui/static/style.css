@@ -172,6 +172,23 @@ a:hover {
   color: var(--accent);
 }
 
+/* необратимое действие: отмена экземпляра */
+.button-danger {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.button-danger:hover {
+  background: #ffd5d0;
+}
+
 .button-quiet:hover:not(:disabled) {
   background: #cfe0ff;
 }
@@ -423,6 +440,7 @@ textarea:focus {
 .badge-running { background: var(--accent-soft); color: var(--accent); }
 .badge-completed { background: var(--ok-bg); color: var(--ok-text); }
 .badge-failed { background: var(--error-bg); color: var(--error-text); }
+.badge-cancelled { background: var(--panel-bg); color: var(--muted); }
 
 .pager {
   display: flex;
@@ -609,4 +627,180 @@ textarea:focus {
     min-width: 0;
     flex: 1 1 100%;
   }
+}
+
+/* динамика: плитки итогов и графики; цвета серий - OUTCOMES и DURATIONS в app.js */
+.stats-result.is-loading {
+  opacity: 0.5;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+}
+
+a.stat-tile:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.stat-value.stat-alert {
+  color: var(--error-text);
+}
+
+.stat-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chart-card {
+  margin: 0 0 16px;
+  padding: 14px 16px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.chart-title {
+  font-weight: 600;
+}
+
+.chart-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 10px 0 4px;
+  color: #52514e;
+  font-size: 12px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-key {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+}
+
+.legend-key-rect {
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legend-key-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.chart svg {
+  display: block;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: #e1e0d9;
+  stroke-width: 1;
+}
+
+.chart-baseline {
+  stroke: #c3c2b7;
+  stroke-width: 1;
+}
+
+.chart-axis {
+  fill: #898781;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-dot {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.chart-crosshair {
+  stroke: #c3c2b7;
+  stroke-width: 1;
+}
+
+.chart-hit {
+  fill: transparent;
+  outline: none;
+}
+
+.chart-hit.is-active,
+.chart-hit:focus-visible {
+  fill: rgba(0, 26, 52, 0.04);
+}
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 10;
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid rgba(11, 11, 11, 0.1);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(0, 26, 52, 0.12);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.tooltip-title {
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltip-value {
+  min-width: 48px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tooltip-label {
+  color: #52514e;
 }

@@ -5,6 +5,8 @@
 //     ответ {"id": "<instance id>"};
 //   - GET /api/v1/processes/{name}/heatmap?from=&to=&limit= - термокарта: длительности элементов процесса по истории
 //     экземпляров, запущенных в [from, to) (RFC 3339, необязательны), limit - сколько последних экземпляров взять;
+//   - GET /api/v1/processes/{name}/stats?from=&to=&tz= - динамика: экземпляры по дням запуска и их исходы, медиана
+//     и p95 длительности завершённых; по умолчанию последние 30 дней, дни режутся в часовом поясе tz (IANA, UTC);
 //   - GET /api/v1/instances?processName=&status=&businessKey=&limit=&before= - экземпляры от последних запущенных,
 //     before - id последнего экземпляра предыдущей страницы;
 //   - GET /api/v1/instances/{id} - экземпляр: тип процесса, бизнес-ключ, статус, когда запущен и обновлён;
@@ -44,7 +46,11 @@ type HistoryReader interface {
 	ListInstances(ctx context.Context, filter engine.InstanceFilter) ([]engine.Instance, error)
 	CountInstances(ctx context.Context) ([]engine.InstanceCount, error)
 	GetHeatmap(ctx context.Context, filter engine.HeatmapFilter) (*engine.Heatmap, error)
+	GetProcessStats(ctx context.Context, filter engine.StatsFilter) (*engine.ProcessStats, error)
 }
+
+// defaultStatsPeriod - период динамики без from
+const defaultStatsPeriod = 30 * 24 * time.Hour
 
 // ProcessSummary - процесс в списке: Instances - число экземпляров по статусам, без дочерних встроенных подпроцессов
 type ProcessSummary struct {
@@ -82,6 +88,7 @@ func Register(mux *http.ServeMux, processes ProcessStarter, history HistoryReade
 	mux.HandleFunc("GET /api/v1/processes/{name}", processHandler(processes))
 	mux.HandleFunc("POST /api/v1/processes/{name}/instances", startHandler(processes))
 	mux.HandleFunc("GET /api/v1/processes/{name}/heatmap", heatmapHandler(history))
+	mux.HandleFunc("GET /api/v1/processes/{name}/stats", statsHandler(history))
 	mux.HandleFunc("GET /api/v1/instances", listInstancesHandler(history))
 	mux.HandleFunc("GET /api/v1/instances/{id}", instanceHandler(history))
 	mux.HandleFunc("GET /api/v1/instances/{id}/history", historyHandler(history))
@@ -187,6 +194,47 @@ func heatmapHandler(history HistoryReader) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, heatmap)
+	}
+}
+
+func statsHandler(history HistoryReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		filter := engine.StatsFilter{ProcessName: r.PathValue("name"), To: time.Now(), Location: time.UTC}
+		if value := query.Get("tz"); value != "" {
+			location, err := time.LoadLocation(value)
+			// Local - часовой пояс сервера, Postgres его не знает
+			if err != nil || value == "Local" {
+				writeError(w, http.StatusBadRequest, "tz: IANA time zone expected, e.g. Europe/Moscow")
+				return
+			}
+			filter.Location = location
+		}
+		for name, bound := range map[string]*time.Time{"from": &filter.From, "to": &filter.To} {
+			if value := query.Get(name); value != "" {
+				parsed, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, name+": "+err.Error())
+					return
+				}
+				*bound = parsed
+			}
+		}
+		if filter.From.IsZero() {
+			filter.From = filter.To.Add(-defaultStatsPeriod)
+		}
+		stats, err := history.GetProcessStats(r.Context(), filter)
+		switch {
+		case err == nil:
+			writeJSON(w, http.StatusOK, stats)
+		case errors.Is(err, engine.ErrProcessNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, engine.ErrInvalidPeriod):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.ErrorContext(r.Context(), "process stats", "process", filter.ProcessName, "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
 	}
 }
 

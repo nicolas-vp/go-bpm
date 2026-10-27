@@ -22,6 +22,8 @@ var (
 	ErrCancel = errors.New("queue: cancel task")
 	// ErrNonRetryable - задача падает сразу, без оставшихся повторов
 	ErrNonRetryable = errors.New("queue: non-retryable error")
+	// ErrNotFailed - задачи нет или она не failed: перезапустить можно только упавшую
+	ErrNotFailed = errors.New("queue: task is not failed")
 )
 
 // Tx - то, что очереди и движку нужно от транзакции; pgx.Tx и pgxpool.Pool подходят

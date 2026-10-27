@@ -1,7 +1,8 @@
 // Страница истории: рисует BPMN процесса экземпляра, отмечает пройденные элементы по записям bpm_history,
 // по клику на элемент показывает его проходы с переменными и кнопку перехода в историю подпроцесса
 // (встроенного или callActivity). У задачи бизнес-правила - кнопка с таблицей решения DMN (dmn-js),
-// где подсвечены сработавшие правила из rules_history.
+// где подсвечены сработавшие правила из rules_history. Упавшие задачи экземпляра и его дочерних (API /api/v1
+// консоли) - над диаграммой, с перезапуском как есть или с исправленными переменными; корневой экземпляр можно отменить.
 (function () {
   'use strict';
 
@@ -14,6 +15,17 @@
   var panelBody = document.getElementById('panel-body');
 
   var viewer = new BpmnJS({ container: '#canvas' });
+
+  var failuresBox = document.getElementById('failures');
+  var actionsBox = document.getElementById('instance-actions');
+  var cancelButton = document.getElementById('cancel-instance');
+  var cancelConfirm = document.getElementById('cancel-confirm');
+  var retryDialog = document.getElementById('retry');
+  var retryVars = document.getElementById('retry-vars');
+  var retryError = document.getElementById('retry-error');
+  // retrying - упавшая задача, открытая в окне исправления переменных
+  var retrying = null;
+  var instanceStatuses = { running: 'выполняется', completed: 'завершён', failed: 'упал', cancelled: 'отменён' };
 
   var rulesDialog = document.getElementById('rules');
   var rulesTitle = document.getElementById('rules-title');
@@ -87,6 +99,8 @@
   async function show(instanceId) {
     errorBox.hidden = true;
     parentBox.hidden = true;
+    failuresBox.hidden = true;
+    actionsBox.hidden = true;
     info.textContent = 'Загрузка…';
     setPanelVisible(false); // без closePanel: ?element= в адресе нужен после загрузки
 
@@ -94,7 +108,9 @@
     try {
       var resp = await fetch('api/diagram?instanceId=' + encodeURIComponent(instanceId));
       data = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) {
+      if (resp.status === 404) {
+        data = await withoutHistory(instanceId, data.error);
+      } else if (!resp.ok) {
         throw new Error(data.error || resp.status + ' ' + resp.statusText);
       }
     } catch (err) {
@@ -118,8 +134,12 @@
 
     var finished = markRecords(data.records || [], data.instance_uid);
     markLinks();
-    renderInfo(data, (data.records || []).length, finished);
+    renderInfo(data, (data.records || []).length, finished ? 'completed' : 'running');
     renderParent(data.parent);
+    // статус и упавшие задачи - из API консоли; без него страница остаётся историей
+    loadOperations(data).catch(function (err) {
+      showProblem('Не удалось получить упавшие задачи: ' + err.message);
+    });
 
     // ?element=<id> - открыть панель элемента сразу, ссылкой можно поделиться
     var elementId = new URLSearchParams(window.location.search).get('element');
@@ -518,13 +538,210 @@
     viewer.get('canvas').resized();
   }
 
-  function renderInfo(data, count, finished) {
+  function renderInfo(data, count, status) {
     info.replaceChildren(
       text('Процесс '), el('b', data.process_name),
       text(' · экземпляр '), el('code', data.instance_uid),
       text(' · записей: ' + count + ' · '),
-      el('b', finished ? 'завершён' : 'выполняется')
+      el('b', instanceStatuses[status] || status, 'status-' + status)
     );
+  }
+
+  // --- упавшие задачи и отмена ---------------------------------------------------------------------
+
+  // withoutHistory - схема экземпляра без записей истории: экземпляр, упавший на первом шаге, записей не оставил
+  // (шаг откатился), а разбирать его нужно именно здесь. Нет и строки экземпляра - ошибка истории как есть
+  async function withoutHistory(instanceId, historyError) {
+    var instance;
+    try {
+      instance = await api('GET', '/instances/' + encodeURIComponent(instanceId));
+    } catch (err) {
+      throw new Error(err.status === 404 ? historyError || err.message : err.message);
+    }
+    // встроенный подпроцесс "<процесс>.<подпроцесс>" нарисован в BPMN процесса
+    var process = await api('GET', '/processes/' + encodeURIComponent(instance.process_name.split('.')[0]));
+    return { instance_uid: instance.instance_uid, process_name: instance.process_name, bpmn: process.bpmn, records: [] };
+  }
+
+  async function api(method, path, body) {
+    var options = { method: method, headers: {} };
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    var resp = await fetch('/api/v1' + path, options);
+    if (resp.status === 204) {
+      return null;
+    }
+    var data = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) {
+      var err = new Error(data.error || resp.status + ' ' + resp.statusText);
+      err.status = resp.status;
+      throw err;
+    }
+    return data;
+  }
+
+  // loadOperations показывает статус экземпляра из bpm_process_instance, упавшие задачи и кнопку отмены
+  async function loadOperations(data) {
+    var instanceId = data.instance_uid;
+    var results = await Promise.all([
+      // строки экземпляра нет, если история писалась без History.ToDB: тогда остаётся статус по истории
+      api('GET', '/instances/' + instanceId).catch(function (err) {
+        if (err.status === 404) {
+          return null;
+        }
+        throw err;
+      }),
+      api('GET', '/instances/' + instanceId + '/failures'),
+    ]);
+    if (!state.data || state.data.instance_uid !== instanceId) {
+      return; // пока ждали, открыли другой экземпляр
+    }
+    var instance = results[0];
+    if (instance) {
+      renderInfo(data, (data.records || []).length, instance.status);
+    }
+    var canCancel = instance && !instance.parent_instance_uid && (instance.status === 'running' || instance.status === 'failed');
+    actionsBox.hidden = !canCancel;
+    cancelConfirm.hidden = true;
+    cancelButton.hidden = false;
+    renderFailures(results[1].failures || [], instanceId);
+  }
+
+  function renderFailures(failures, instanceId) {
+    var canvas = viewer.get('canvas');
+    var registry = viewer.get('elementRegistry');
+    registry.getAll().forEach(function (element) {
+      canvas.removeMarker(element.id, 'bpm-failed');
+    });
+    failuresBox.replaceChildren();
+    failuresBox.hidden = failures.length === 0;
+    if (!failures.length) {
+      return;
+    }
+    failuresBox.append(el('div', failures.length === 1 ? 'Упала задача — экземпляр стоит' : 'Упали задачи: ' + failures.length + ' — экземпляр стоит', 'failures-title'));
+    failures.forEach(function (failure) {
+      var element = failedElement(failure);
+      // упавший элемент отмечается, если он на этой диаграмме: экземпляр callActivity нарисован в своём BPMN
+      var onDiagram = failure.instance_uid === instanceId ||
+        (state.data.records || []).some(function (record) { return record.instance_uid === failure.instance_uid; });
+      if (onDiagram && registry.get(element)) {
+        canvas.addMarker(element, 'bpm-failed');
+      }
+      var where = [el('b', element)];
+      if (failure.instance_uid !== instanceId) {
+        where.push(text(' в '), link(failure.instance_uid, failure.process_name + ' · ' + shortId(failure.instance_uid)));
+      }
+      var retry = el('button', 'Повторить', 'button');
+      retry.type = 'button';
+      retry.addEventListener('click', function () {
+        retryFailure(failure, undefined, retry).catch(function (err) {
+          showProblem('Не удалось перезапустить задачу: ' + err.message);
+        });
+      });
+      var fix = el('button', 'Исправить переменные…', 'button-quiet');
+      fix.type = 'button';
+      fix.addEventListener('click', function () {
+        openRetry(failure);
+      });
+      failuresBox.append(el('div', null, 'failure', [
+        el('div', null, 'failure-main', [
+          el('div', null, null, [text('Элемент ')].concat(where, [
+            text(' · попыток: ' + failure.attempts + ' · ' + formatTime(failure.failed_at)),
+          ])),
+          el('pre', failure.error, 'failure-error'),
+        ]),
+        el('div', null, 'failure-actions', [retry, fix]),
+      ]));
+    });
+  }
+
+  // failedElement - где упало: движок пишет в ошибку шага 'element "<id>"', а токен задачи стоит на элементе,
+  // с которого шаг начался
+  function failedElement(failure) {
+    var match = /element "([^"]+)"/.exec(failure.error || '');
+    return match ? match[1] : failure.element_id;
+  }
+
+  async function retryFailure(failure, variables, button) {
+    if (button) {
+      button.disabled = true;
+    }
+    try {
+      await api('POST', '/failures/' + failure.task_id + '/retry', variables === undefined ? {} : { variables: variables });
+    } catch (err) {
+      if (button) {
+        button.disabled = false;
+      }
+      throw err;
+    }
+    // шаг выполнит очередь чуть позже: показываем результат через секунду
+    failuresBox.replaceChildren(el('div', 'Задача возвращена в очередь, обновляем…', 'failures-title'));
+    setTimeout(function () {
+      show(state.data.instance_uid);
+    }, 1000);
+  }
+
+  function openRetry(failure) {
+    retrying = failure;
+    document.getElementById('retry-subtitle').textContent = failedElement(failure) + ' · ' + failure.process_name;
+    retryVars.value = JSON.stringify(failure.variables || {}, null, 2);
+    retryError.hidden = true;
+    retryDialog.showModal();
+  }
+
+  document.getElementById('retry-form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var variables;
+    try {
+      variables = JSON.parse(retryVars.value);
+      if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
+        throw new Error('нужен JSON-объект');
+      }
+    } catch (err) {
+      retryError.textContent = 'Переменные: ' + err.message;
+      retryError.hidden = false;
+      return;
+    }
+    try {
+      await retryFailure(retrying, variables);
+    } catch (err) {
+      retryError.textContent = err.message;
+      retryError.hidden = false;
+      return;
+    }
+    retryDialog.close();
+  });
+  ['retry-close', 'retry-cancel'].forEach(function (id) {
+    document.getElementById(id).addEventListener('click', function () {
+      retryDialog.close();
+    });
+  });
+
+  // отмена с подтверждением на странице: confirm() в браузере легко нажать не глядя
+  cancelButton.addEventListener('click', function () {
+    cancelButton.hidden = true;
+    cancelConfirm.hidden = false;
+  });
+  document.getElementById('cancel-no').addEventListener('click', function () {
+    cancelConfirm.hidden = true;
+    cancelButton.hidden = false;
+  });
+  document.getElementById('cancel-yes').addEventListener('click', async function () {
+    var instanceId = state.data.instance_uid;
+    try {
+      await api('POST', '/instances/' + instanceId + '/cancel');
+    } catch (err) {
+      showProblem('Не удалось отменить экземпляр: ' + err.message);
+      return;
+    }
+    show(instanceId);
+  });
+
+  function showProblem(message) {
+    errorBox.textContent = message;
+    errorBox.hidden = false;
   }
 
   function renderParent(parent) {
