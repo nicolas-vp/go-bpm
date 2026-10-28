@@ -80,34 +80,38 @@
     <!-- Экземпляры: поиск по процессу, статусу, бизнес-ключу и времени запуска, страницы от новых к старым -->
     <section id="tab-instances" class="tab" hidden>
       <h2>Экземпляры</h2>
-      <form id="instances-form" class="filters">
-        <label class="field">
-          <span>Процесс</span>
-          <select id="instances-process"><option value="">все</option></select>
-        </label>
-        <label class="field">
-          <span>Статус</span>
-          <select id="instances-status">
-            <option value="">все</option>
-            <option value="running">выполняется</option>
-            <option value="completed">завершён</option>
-            <option value="failed">упал</option>
-            <option value="cancelled">отменён</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Бизнес-ключ</span>
-          <input id="instances-key" type="text" autocomplete="off">
-        </label>
-        <label class="field">
-          <span>Запущен с <span class="muted">необязательно</span></span>
-          <input id="instances-from" type="datetime-local" step="1">
-        </label>
-        <label class="field">
-          <span>по <span class="muted">включительно</span></span>
-          <input id="instances-to" type="datetime-local" step="1">
-        </label>
-        <button class="button" type="submit">Найти</button>
+      <form id="instances-form" class="filters filters-rows">
+        <div class="filters-row">
+          <label class="field">
+            <span>Процесс</span>
+            <select id="instances-process"><option value="">все</option></select>
+          </label>
+          <label class="field">
+            <span>Статус</span>
+            <select id="instances-status">
+              <option value="">все</option>
+              <option value="running">выполняется</option>
+              <option value="completed">завершён</option>
+              <option value="failed">упал</option>
+              <option value="cancelled">отменён</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Бизнес-ключ</span>
+            <input id="instances-key" type="text" autocomplete="off">
+          </label>
+        </div>
+        <div class="filters-row">
+          <label class="field">
+            <span>Запущен с <span class="muted">необязательно</span></span>
+            <input id="instances-from" type="datetime-local" step="1">
+          </label>
+          <label class="field">
+            <span>по <span class="muted">включительно</span></span>
+            <input id="instances-to" type="datetime-local" step="1">
+          </label>
+          <button class="button" type="submit">Найти</button>
+        </div>
       </form>
       <div class="table-wrap">
         <table class="table table-rows">

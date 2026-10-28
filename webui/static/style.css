@@ -239,6 +239,19 @@ a:hover {
   margin-bottom: 16px;
 }
 
+/* filters-rows - фильтр в несколько строк: каждая .filters-row переносит поля сама */
+.filters-rows {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
