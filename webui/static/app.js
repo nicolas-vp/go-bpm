@@ -428,6 +428,9 @@
   var instancesProcess = document.getElementById('instances-process');
   var instancesStatus = document.getElementById('instances-status');
   var instancesKey = document.getElementById('instances-key');
+  // время запуска - в адресе локальное, как в полях (#/instances?from=2026-10-01T09:00:05); "по" - включая эту секунду
+  var instancesFrom = document.getElementById('instances-from');
+  var instancesTo = document.getElementById('instances-to');
   var instancesBody = document.getElementById('instances-body');
   var instancesPrev = document.getElementById('instances-prev');
   var instancesNext = document.getElementById('instances-next');
@@ -441,6 +444,8 @@
     if (instancesProcess.value) params.process = instancesProcess.value;
     if (instancesStatus.value) params.status = instancesStatus.value;
     if (instancesKey.value.trim()) params.key = instancesKey.value.trim();
+    if (instancesFrom.value) params.from = instancesFrom.value;
+    if (instancesTo.value) params.to = instancesTo.value;
     // тот же адрес не вызовет hashchange: ищем заново сами
     if (new URLSearchParams(params).toString() === route().params.toString()) {
       pages.filterKey = null;
@@ -465,6 +470,8 @@
     instancesProcess.value = params.get('process') || '';
     instancesStatus.value = params.get('status') || '';
     instancesKey.value = params.get('key') || '';
+    instancesFrom.value = params.get('from') || '';
+    instancesTo.value = params.get('to') || '';
     // новый фильтр - с первой страницы; возврат на вкладку с тем же фильтром оставляет страницу
     var filterKey = params.toString();
     if (pages.filterKey !== filterKey) {
@@ -479,6 +486,9 @@
     if (params.get('process')) query.set('processName', params.get('process'));
     if (params.get('status')) query.set('status', params.get('status'));
     if (params.get('key')) query.set('businessKey', params.get('key'));
+    // API берёт [from, to): верхняя граница - начало следующей секунды
+    if (params.get('from')) query.set('from', new Date(params.get('from')).toISOString());
+    if (params.get('to')) query.set('to', new Date(new Date(params.get('to')).getTime() + 1000).toISOString());
     if (pages.cursors[pages.index]) query.set('before', pages.cursors[pages.index]);
     var data = await api('GET', '/instances?' + query);
     // лишний экземпляр сверх страницы только говорит, что есть следующая

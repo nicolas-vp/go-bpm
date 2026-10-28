@@ -47,6 +47,8 @@ type InstanceFilter struct {
 	Status string
 	// BusinessKey - точное совпадение; индекса по ключу нет, поэтому лучше вместе с ProcessName или Status
 	BusinessKey string
+	// From, To - когда запущен экземпляр: From включительно, To - нет; нулевое время - без границы
+	From, To time.Time
 	// Before - продолжить выборку: экземпляры, запущенные раньше этого (последнего из предыдущей страницы)
 	Before uuid.UUID
 	// Limit - не больше MaxInstancesLimit, 0 - DefaultInstancesLimit
@@ -234,6 +236,12 @@ func (h *HistoryReader) ListInstances(ctx context.Context, filter InstanceFilter
 	}
 	if filter.BusinessKey != "" {
 		add("business_key = ?", filter.BusinessKey)
+	}
+	if !filter.From.IsZero() {
+		add("created_at >= ?", filter.From)
+	}
+	if !filter.To.IsZero() {
+		add("created_at < ?", filter.To)
 	}
 	if filter.Before != uuid.Nil {
 		add("instance_uid < ?", filter.Before)

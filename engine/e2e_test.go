@@ -95,6 +95,14 @@ func TestEndToEnd(t *testing.T) {
 		if len(found) != 1 || found[0].InstanceUid != id {
 			t.Errorf("%s: list instances = %+v", name, found)
 		}
+		// период запуска: From включительно, To - нет
+		period := engine.InstanceFilter{ProcessName: name, BusinessKey: "key-" + name, From: instance.CreatedAt, To: instance.CreatedAt.Add(time.Microsecond)}
+		if found, err := reader.ListInstances(ctx, period); err != nil || len(found) != 1 || found[0].InstanceUid != id {
+			t.Errorf("%s: instances started at %s = %+v, err %v", name, instance.CreatedAt, found, err)
+		}
+		if found, err := reader.ListInstances(ctx, engine.InstanceFilter{ProcessName: name, BusinessKey: "key-" + name, To: instance.CreatedAt}); err != nil || len(found) != 0 {
+			t.Errorf("%s: instances before start = %+v, err %v", name, found, err)
+		}
 
 		// термокарта: элементы процесса и его встроенных подпроцессов, каждый завершился хотя бы раз;
 		// экземпляры - все экземпляры процесса, в том числе вызванные callActivity другого процесса

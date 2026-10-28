@@ -135,7 +135,9 @@ func TestAPI(t *testing.T) {
 		{method: "GET", path: "/api/v1/instances?status=unknown", wantStatus: http.StatusBadRequest, wantBody: "status"},
 		{method: "GET", path: "/api/v1/instances?limit=0", wantStatus: http.StatusBadRequest, wantBody: "limit"},
 		{method: "GET", path: "/api/v1/instances?before=bad", wantStatus: http.StatusBadRequest, wantBody: "before"},
-		{method: "GET", path: "/api/v1/instances?processName=main&status=running&businessKey=order-1&limit=5&before=" + fake.id.String(),
+		{method: "GET", path: "/api/v1/instances?to=yesterday", wantStatus: http.StatusBadRequest, wantBody: "to"},
+		{method: "GET", path: "/api/v1/instances?processName=main&status=running&businessKey=order-1&limit=5&before=" + fake.id.String() +
+			"&from=2026-10-27T09:00:05Z&to=2026-10-27T12:30:15%2B03:00",
 			wantStatus: http.StatusOK, wantBody: `"status":"running"`},
 	} {
 		rec := httptest.NewRecorder()
@@ -147,7 +149,11 @@ func TestAPI(t *testing.T) {
 	if fake.variables["amount"] != float64(55) || fake.variables["name"] != "x" || fake.businessKey != "order-1" {
 		t.Errorf("variables = %v, business key = %q", fake.variables, fake.businessKey)
 	}
-	wantFilter := engine.InstanceFilter{ProcessName: "main", Status: engine.InstanceRunning, BusinessKey: "order-1", Before: fake.id, Limit: 5}
+	wantFilter := engine.InstanceFilter{ProcessName: "main", Status: engine.InstanceRunning, BusinessKey: "order-1", Before: fake.id, Limit: 5,
+		From: time.Date(2026, 10, 27, 9, 0, 5, 0, time.UTC), To: time.Date(2026, 10, 27, 9, 30, 15, 0, time.UTC)}
+	if fake.filter.From.Equal(wantFilter.From) && fake.filter.To.Equal(wantFilter.To) {
+		fake.filter.From, fake.filter.To = wantFilter.From, wantFilter.To
+	}
 	if fake.filter != wantFilter {
 		t.Errorf("filter = %+v, want %+v", fake.filter, wantFilter)
 	}

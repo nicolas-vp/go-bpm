@@ -7,8 +7,9 @@
 //     экземпляров, запущенных в [from, to) (RFC 3339, необязательны), limit - сколько последних экземпляров взять;
 //   - GET /api/v1/processes/{name}/stats?from=&to=&tz= - динамика: экземпляры по дням запуска и их исходы, медиана
 //     и p95 длительности завершённых; по умолчанию последние 30 дней, дни режутся в часовом поясе tz (IANA, UTC);
-//   - GET /api/v1/instances?processName=&status=&businessKey=&limit=&before= - экземпляры от последних запущенных,
-//     before - id последнего экземпляра предыдущей страницы;
+//   - GET /api/v1/instances?processName=&status=&businessKey=&from=&to=&limit=&before= - экземпляры от последних
+//     запущенных, from и to - когда запущен, [from, to) (RFC 3339, необязательны), before - id последнего экземпляра
+//     предыдущей страницы;
 //   - GET /api/v1/instances/{id} - экземпляр: тип процесса, бизнес-ключ, статус, когда запущен и обновлён;
 //   - GET /api/v1/instances/{id}/history?withChildren=true - история экземпляра в порядке записи,
 //     withChildren добавляет дочерние экземпляры (подпроцессы и callActivity) на всю глубину.
@@ -245,6 +246,16 @@ func listInstancesHandler(history HistoryReader) http.HandlerFunc {
 			ProcessName: query.Get("processName"),
 			Status:      query.Get("status"),
 			BusinessKey: query.Get("businessKey"),
+		}
+		for name, bound := range map[string]*time.Time{"from": &filter.From, "to": &filter.To} {
+			if value := query.Get(name); value != "" {
+				parsed, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, name+": "+err.Error())
+					return
+				}
+				*bound = parsed
+			}
 		}
 		if value := query.Get("limit"); value != "" {
 			limit, err := strconv.Atoi(value)
