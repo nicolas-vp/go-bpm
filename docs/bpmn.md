@@ -29,7 +29,7 @@
 
 ## Сводная таблица
 
-![Поддерживаемые элементы: события, шлюзы, task, service, script, business rule и user task, call activity, граничные таймер и ошибка, подпроцесс](images/elements.svg)
+![Поддерживаемые элементы: события таймера и сообщения, шлюзы, task, service, script, business rule, user task и receive task, call activity, граничные таймер и ошибка, multi-instance, подпроцесс](images/elements.svg)
 
 | Элемент | Поддержка | Как исполняется |
 |---|---|---|
