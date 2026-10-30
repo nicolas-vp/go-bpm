@@ -130,17 +130,39 @@ err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 | Таблица | Что хранит | Растёт |
 |---|---|---|
 | `bpm_queue` | задачи очереди: шаги, service task, таймеры | выполненные удаляются через `Retention` (7 дней), `failed` — никогда |
-| `bpm_process_instance` | экземпляры: процесс, бизнес-ключ, родитель, статус (`running`, `completed`, `failed`, `cancelled`) | строка на экземпляр, не удаляется |
-| `bpm_history` | история элементов | строка на каждый элемент и переход, не удаляется |
-| `bpm_rules_history` | вызовы решений DMN | строка на вызов, не удаляется |
-| `bpm_user_task` | задачи пользователей | строка на каждый приход токена в user task, не удаляется |
+| `bpm_process_instance` | экземпляры: процесс, бизнес-ключ, родитель, статус (`running`, `completed`, `failed`, `cancelled`) | строка на экземпляр; удаляет `engine.Retention`, если включена |
+| `bpm_history` | история элементов | строка на каждый элемент и переход; удаляет `engine.Retention` |
+| `bpm_rules_history` | вызовы решений DMN | строка на вызов; удаляет `engine.Retention` |
+| `bpm_user_task` | задачи пользователей | строка на каждый приход токена в user task; удаляет `engine.Retention` |
 | `bpm_parallel_sync` | счётчики слияния параллельных веток | временные |
 | `bpm_wait` | гонка service task и граничного таймера | временные |
 | `bpm_schema_migrations` | применённые миграции | |
 
-История и экземпляры движком не чистятся — это ваши данные. Если нужно, удаляйте старые записи по `created_at`
-своей задачей, например экземпляры `completed` старше года вместе с их `bpm_history`, `bpm_rules_history`
-и `bpm_user_task`.
+### Очистка истории
+
+По умолчанию история и экземпляры не удаляются — это ваши данные. Очистку по сроку хранения включает
+`engine.Retention`:
+
+```go
+retention := engine.NewRetention(pool, engine.RetentionConfig{After: 90 * 24 * time.Hour, Logger: log})
+retention.Start(ctx)
+defer retention.Stop()
+```
+
+| Поле | По умолчанию | Что это |
+|---|---|---|
+| `After` | 0 — выключена | сколько хранить экземпляр после завершения или отмены, от последнего шага (`updated_at`) |
+| `Interval` | 1m | пауза между проходами; пока удаляются полные пачки, следующая идёт сразу |
+| `BatchSize` | 100 | сколько корневых экземпляров удаляется в одной транзакции |
+| `Logger` | `slog.Default()` | ошибки очистки пишутся предупреждением |
+
+- Удаляются корневые экземпляры `completed` и `cancelled` целиком, деревом: встроенные подпроцессы, callActivity,
+  их `bpm_history`, `bpm_rules_history` и `bpm_user_task`. Дочерний экземпляр не удаляется, пока выполняется корень.
+- `running` и `failed` не удаляются никогда: упавший экземпляр ждёт разбора.
+- Несколько подов чистят одновременно, не мешая друг другу: корни берутся `for update skip locked`.
+- Чистить по своему расписанию (cron, отдельная задача) можно без `Start`: `DeleteExpired(ctx)` удаляет одну пачку
+  и возвращает число удалённых корней.
+- Задачи `bpm_queue` чистит очередь, см. `queue.Options.Retention`.
 
 ## Настройки движка
 
@@ -207,6 +229,7 @@ go run ./examples/demo/cmd/demo -help
 | `-kind-prefix` | | `bpm` |
 | `-history-log`, `-history-db`, `-rules-log`, `-rules-db` | | `true` |
 | `-skip-migrations` | | `false` |
+| `-retention` | `GO_BPM_RETENTION` | `0` — история не удаляется; например `720h` |
 
 ## Масштабирование
 

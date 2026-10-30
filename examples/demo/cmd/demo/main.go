@@ -48,6 +48,7 @@ func main() {
 		rulesLog       = flag.Bool("rules-log", true, "писать историю бизнес-правил на экран")
 		rulesDB        = flag.Bool("rules-db", true, "писать историю бизнес-правил в bpm_rules_history")
 		skipMigrations = flag.Bool("skip-migrations", false, "не применять миграции при старте")
+		retention      = flag.Duration("retention", envDuration("GO_BPM_RETENTION", 0), "сколько хранить историю завершённых и отменённых экземпляров, 0 - не удалять; или GO_BPM_RETENTION")
 	)
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -55,7 +56,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, log, *dsn, *addr, *kindPrefix, *skipMigrations, engine.HistoryConfig{
+	if err := run(ctx, log, *dsn, *addr, *kindPrefix, *skipMigrations, *retention, engine.HistoryConfig{
 		ToLog: flagFunc(*historyLog), ToDB: flagFunc(*historyDB),
 	}, engine.HistoryConfig{
 		ToLog: flagFunc(*rulesLog), ToDB: flagFunc(*rulesDB),
@@ -65,7 +66,8 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, skipMigrations bool, history, rulesHistory engine.HistoryConfig) error {
+func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, skipMigrations bool, retention time.Duration,
+	history, rulesHistory engine.HistoryConfig) error {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return err
@@ -105,6 +107,10 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 
 	q.Start(ctx)
 	defer q.Stop()
+	// очистка истории по сроку хранения: без -retention выключена
+	cleaner := engine.NewRetention(pool, engine.RetentionConfig{After: retention, Logger: log})
+	cleaner.Start(ctx)
+	defer cleaner.Stop()
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
@@ -125,6 +131,14 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// envDuration - длительность из переменной окружения; не задана или не разбирается - fallback
+func envDuration(name string, fallback time.Duration) time.Duration {
+	if value, err := time.ParseDuration(os.Getenv(name)); err == nil {
 		return value
 	}
 	return fallback
