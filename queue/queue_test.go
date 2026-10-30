@@ -282,3 +282,38 @@ func TestCancelWhileRunning(t *testing.T) {
 		t.Error("callback of a cancelled task must not run")
 	}
 }
+
+// TestOnAttempt - колбэк получает исход каждой попытки: повтор, затем выполнение
+func TestOnAttempt(t *testing.T) {
+	pool := pgtest.Pool(t)
+	attempts := make(chan queue.Attempt, 10)
+	q := queue.New(pool, queue.Options{
+		PollInterval: 100 * time.Millisecond,
+		Logger:       slog.New(slog.DiscardHandler),
+		OnAttempt:    func(attempt queue.Attempt) { attempts <- attempt },
+	})
+	q.Register("t.attempt", func(ctx context.Context, task *queue.Task) error {
+		if task.Attempt == 1 {
+			return errors.New("boom")
+		}
+		time.Sleep(10 * time.Millisecond)
+		return nil
+	}, queue.KindOptions{MaxAttempts: 2, RetryDelay: 50 * time.Millisecond})
+	start(t, q)
+
+	push(t, q, "t.attempt", "a")
+	status(t, pool, "a", queue.StatusDone)
+	for _, want := range []string{queue.AttemptRetry, queue.AttemptDone} {
+		select {
+		case attempt := <-attempts:
+			if attempt.Kind != "t.attempt" || attempt.Result != want {
+				t.Errorf("attempt = %+v, want result %s", attempt, want)
+			}
+			if want == queue.AttemptDone && attempt.Duration < 10*time.Millisecond {
+				t.Errorf("duration = %v, want >= 10ms", attempt.Duration)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatalf("no attempt %s", want)
+		}
+	}
+}

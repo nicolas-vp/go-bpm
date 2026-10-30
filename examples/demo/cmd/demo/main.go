@@ -14,6 +14,10 @@
 //	curl -XPOST localhost:8080/api/v1/tasks/<task id>/claim -d '{"userId":"bob","groups":["managers"]}'
 //	curl -XPOST localhost:8080/api/v1/tasks/<task id>/complete -d '{"userId":"bob","variables":{"approved":true}}'
 //	open http://localhost:8080/ui/history/?instanceId=<id>
+//
+// Метрики Prometheus:
+//
+//	curl localhost:8080/metrics
 package main
 
 import (
@@ -28,11 +32,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/nicolas-vp/go-bpm/engine"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
 	"github.com/nicolas-vp/go-bpm/httpapi"
+	"github.com/nicolas-vp/go-bpm/metrics"
 	"github.com/nicolas-vp/go-bpm/migrations"
 	"github.com/nicolas-vp/go-bpm/queue"
 	"github.com/nicolas-vp/go-bpm/webui"
@@ -85,7 +93,11 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 	// внешние сервисы для методов task и обработчиков jobType
 	svc := &services.Services{}
 	processes := bpmgen.Processes(svc)
-	q := queue.New(pool, queue.Options{Logger: log})
+	// метрики: состояние движка из базы, время попыток задач, рантайм Go - на /metrics
+	collector := metrics.NewCollector(pool, metrics.Options{Logger: log})
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(collector, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	q := queue.New(pool, queue.Options{Logger: log, OnAttempt: collector.ObserveAttempt})
 	bpmEngine, err := engine.New(q, engine.Config{
 		KindPrefix:   kindPrefix,
 		History:      history,
@@ -102,6 +114,7 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 	httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, bpmEngine))
 	httpapi.RegisterOperations(mux, engine.NewInstanceOperations(pool, bpmEngine))
 	webui.Register(mux, historyReader)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 

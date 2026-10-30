@@ -95,7 +95,31 @@ type Options struct {
 	// Retention - сколько хранить завершённые и отменённые задачи, по умолчанию 7 дней; отрицательное - не удалять.
 	// Упавшие задачи (failed) не удаляются никогда
 	Retention time.Duration
+	// OnAttempt вызывается после каждой попытки задачи с её исходом и временем, например для метрик
+	// (metrics.Collector.ObserveAttempt). Вызывается в воркере: должен быть быстрым и не блокировать
+	OnAttempt func(Attempt)
 	Logger    *slog.Logger
+}
+
+// Исходы попытки задачи (Attempt.Result)
+const (
+	// AttemptDone - задача выполнена
+	AttemptDone = "done"
+	// AttemptRetry - попытка упала, задача будет повторена
+	AttemptRetry = "retry"
+	// AttemptFailed - попытки кончились или ошибка без повторов: задача failed
+	AttemptFailed = "failed"
+	// AttemptCancelled - обработчик отменил задачу (ErrCancel)
+	AttemptCancelled = "cancelled"
+	// AttemptLost - результат отброшен: аренда истекла или задачу отменили, пока она выполнялась
+	AttemptLost = "lost"
+)
+
+// Attempt - попытка задачи: вид, исход и сколько она шла вместе с колбэками завершения
+type Attempt struct {
+	Kind     string
+	Result   string
+	Duration time.Duration
 }
 
 // KindOptions - параметры вида задач
@@ -298,11 +322,20 @@ func (q *Queue) fetch(ctx context.Context, k *kind) (*Task, error) {
 }
 
 func (q *Queue) process(ctx context.Context, k *kind, task *Task) {
+	start := time.Now()
+	result := q.attempt(ctx, k, task)
+	if q.opts.OnAttempt != nil {
+		q.opts.OnAttempt(Attempt{Kind: k.name, Result: result, Duration: time.Since(start)})
+	}
+}
+
+// attempt выполняет попытку задачи и возвращает её исход (Attempt.Result)
+func (q *Queue) attempt(ctx context.Context, k *kind, task *Task) string {
 	log := q.log.With("kind", k.name, "task", task.Id, "attempt", task.Attempt)
 	// аренду теряли столько раз, что попытки кончились: воркеры падают на этой задаче
 	if task.Attempt > task.MaxAttempts {
 		q.finish(ctx, k, log, task, StatusFailed, errors.New("no attempts left: lease expired"))
-		return
+		return AttemptFailed
 	}
 
 	err := q.runHandler(ctx, k, task)
@@ -310,25 +343,28 @@ func (q *Queue) process(ctx context.Context, k *kind, task *Task) {
 		err = q.complete(ctx, k, task)
 		if errors.Is(err, errLeaseLost) {
 			log.WarnContext(ctx, "queue: task result dropped: lease lost or task cancelled")
-			return
+			return AttemptLost
 		}
 		if err == nil {
-			return
+			return AttemptDone
 		}
 	}
 
 	switch {
 	case errors.Is(err, ErrCancel):
 		q.finish(ctx, k, log, task, StatusCancelled, err)
+		return AttemptCancelled
 	case errors.Is(err, ErrNonRetryable) || task.IsLastAttempt():
 		log.ErrorContext(ctx, "queue: task failed", "error", err)
 		q.finish(ctx, k, log, task, StatusFailed, err)
+		return AttemptFailed
 	default:
 		delay := retryDelay(k.opts, task.Attempt)
 		log.WarnContext(ctx, "queue: task will be retried", "delay", delay, "error", err)
 		if _, err := q.pool.Exec(ctx, retryQuery, task.Id, task.Attempt, delay.Microseconds(), errorText(err)); err != nil {
 			log.ErrorContext(ctx, "queue: retry", "error", err)
 		}
+		return AttemptRetry
 	}
 }
 

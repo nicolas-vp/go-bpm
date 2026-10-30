@@ -186,6 +186,7 @@ defer retention.Stop()
 |---|---|---|
 | `PollInterval` | 1s (±25%) | как часто опрашивать таблицу: нужно отложенным задачам (таймеры, повторы) |
 | `Retention` | 7 дней | сколько хранить выполненные и отменённые задачи; отрицательное — не удалять |
+| `OnAttempt` | nil | вызывается после каждой попытки задачи с исходом и временем, для метрик (`metrics.Collector.ObserveAttempt`) |
 | `Logger` | `slog.Default()` | логгер очереди |
 
 Задержка повтора начинается с `Config.RetryDelay`, удваивается с каждой попыткой со случайной половиной (equal
@@ -260,9 +261,45 @@ go run ./examples/demo/cmd/demo -help
 
 ## Мониторинг
 
-Встроенных метрик пока нет, всё видно запросами к базе.
+### Метрики Prometheus
 
-Глубина очереди по видам:
+Пакет `metrics` — `prometheus.Collector` для реестра сервиса (`prometheus/client_golang`):
+
+```go
+collector := metrics.NewCollector(pool, metrics.Options{Logger: log})
+prometheus.MustRegister(collector)
+q := queue.New(pool, queue.Options{OnAttempt: collector.ObserveAttempt})
+// ...
+mux.Handle("GET /metrics", promhttp.Handler())
+```
+
+| Метрика | Метки | Что это |
+|---|---|---|
+| `bpm_queue_tasks` | `kind`, `status` | незавершённые задачи очереди: `pending` (ждут или выполняются), `failed` |
+| `bpm_queue_lag_seconds` | `kind` | сколько ждёт самая старая задача, которую уже можно выдать: воркеры не успевают |
+| `bpm_queue_attempt_duration_seconds` | `kind`, `result` | гистограмма попыток задач этого пода; `result` — `done`, `retry`, `failed`, `cancelled`, `lost` |
+| `bpm_instances` | `process`, `status` | экземпляры `running` и `failed`; завершённые не считаются, их число растёт без конца |
+| `bpm_user_tasks_open` | `process` | открытые задачи пользователей |
+| `bpm_scrape_success` | | 1 — метрики из базы прочитаны, 0 — запрос упал (ошибка в логе) |
+
+- Всё, кроме гистограммы попыток, читается запросами к базе при каждом опросе, поэтому одинаково на всех подах.
+  В PromQL берите `max by (...)`, а не `sum`. Гистограмма — своя у каждого пода, её суммируйте.
+- Ошибка базы не ломает `/metrics` сервиса: метрики движка пропускаются, `bpm_scrape_success` становится 0.
+- `Options`: `Namespace` (по умолчанию `bpm`), `Timeout` на запросы одного опроса (5s), `Buckets` гистограммы.
+- Демо отдаёт метрики на `GET /metrics` вместе с метриками рантайма Go.
+
+Что алертить:
+
+```promql
+max by (kind) (bpm_queue_tasks{status="failed"}) > 0        # упавшие задачи
+max by (kind) (bpm_queue_lag_seconds) > 60                   # воркеры не успевают
+sum by (kind) (rate(bpm_queue_attempt_duration_seconds_count{result="retry"}[5m])) > 0.1
+max(bpm_scrape_success) == 0                                 # метрики из базы не читаются
+```
+
+### Запросы к базе
+
+То же и подробнее видно запросами к базе. Глубина очереди по видам:
 
 ```sql
 select kind, status, count(*), min(run_at) as oldest
@@ -292,9 +329,6 @@ order by 1, 2;
 
 То же есть в консоли: вкладка «Процессы» показывает число выполняющихся, завершённых и упавших экземпляров каждого
 процесса, а `GET /api/v1/processes` отдаёт эти счётчики в JSON.
-
-Что стоит алертить: появление `failed` в `bpm_queue`, рост `pending` с `run_at` в прошлом (воркеры не успевают),
-рост задач с `attempt > 0`.
 
 ## Упавшие экземпляры
 
