@@ -45,7 +45,26 @@ type Expression struct {
 	Boundaries []Boundary
 	// UserTask - для ActivateTypeUserTask: кому назначается задача
 	UserTask *UserTask
+	// Loop - последовательный multi-instance: элемент выполняется несколько раз подряд, nil - один раз
+	Loop *Loop
 }
+
+// LoopCounterVariable - переменная с номером выполнения элемента в цикле, с 1, как loopCounter в Zeebe.
+// Видна элементу и условию завершения цикла, после цикла удаляется
+const LoopCounterVariable = "loopCounter"
+
+// Loop - последовательный multi-instance (multiInstanceLoopCharacteristics isSequential="true"): элемент выполняется
+// снова, пока не выполнен Cardinality раз или не выполнилось CompletionCondition. Хотя бы одно из них задано
+type Loop struct {
+	// Cardinality - сколько раз выполнить элемент (loopCardinality), 0 - без ограничения, до CompletionCondition
+	Cardinality int
+	// CompletionCondition - условие завершения цикла (completionCondition): проверяется после каждого выполнения,
+	// true - цикл закончен. nil - только Cardinality
+	CompletionCondition LoopConditionFunc
+}
+
+// LoopConditionFunc - сгенерированное условие завершения цикла по переменным процесса
+type LoopConditionFunc func(variables map[string]any) (bool, error)
 
 // UserTask - назначение задачи пользователя, как в Camunda 7. Значение вида "${name}" - переменная процесса
 // (путь через точку), её значение берётся, когда токен приходит в задачу; остальные значения - как есть

@@ -72,6 +72,9 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes m
 		}
 		expressions[event.Id] = expression
 	}
+	if err := addLoops(expressions, process); err != nil {
+		return nil, err
+	}
 	for _, event := range process.BoundaryEvents {
 		if err := addBoundaryEvent(expressions, &event, process, errorCodes); err != nil {
 			return nil, err
@@ -150,6 +153,9 @@ func addBoundaryEvent(expressions map[string]*model.Expression, event *bpmn.Boun
 		}
 	default:
 		return fmt.Errorf("boundary event %s: нужно одно определение события, таймер или ошибка", event.Id)
+	}
+	if err := loopTimerError(event, task, boundary); err != nil {
+		return err
 	}
 	task.Boundaries = append(task.Boundaries, boundary)
 

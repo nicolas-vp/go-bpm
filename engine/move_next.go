@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 
@@ -20,6 +21,9 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 	}
 	var activateType = expression.ActivateType
 
+	if moveType == moveActivate && expression.Loop != nil {
+		enterLoop(message, expression)
+	}
 	if moveType == moveComplete {
 		switch expression.ActivateType {
 		case bpm.ActivateTypeQueue:
@@ -161,6 +165,15 @@ func (s *Engine) completeElement(ctx context.Context, tx queue.Tx, message *inst
 	if err := s.logHistory(ctx, tx, HistoryCompleted, message, expression); err != nil {
 		return err
 	}
+	if expression.Loop != nil {
+		again, err := nextIteration(message, expression)
+		if err != nil {
+			return err
+		}
+		if again {
+			return s.repeatElement(ctx, tx, message, expression)
+		}
+	}
 	switch expression.CompleteType {
 	case bpm.CompleteTypeStraight:
 		for i, next := range expression.NextElements {
@@ -184,4 +197,19 @@ func (s *Engine) completeElement(ctx context.Context, tx queue.Tx, message *inst
 	default:
 		return fmt.Errorf("process %q: element %q has unsupported complete type %d", message.ProcessName, expression.ElementId, expression.CompleteType)
 	}
+}
+
+// repeatElement активирует элемент с циклом ещё раз. Метод task и scriptTask выполняется синхронно, поэтому его
+// следующее выполнение - отдельная системная задача: упавшее выполнение повторяется одно, а не весь цикл,
+// и долгий цикл не держит одну транзакцию. Остальные элементы при активации только ставят задачу или ждут
+func (s *Engine) repeatElement(ctx context.Context, tx queue.Tx, message *instanceMessage, expression *bpm.Expression) error {
+	if expression.ActivateType != bpm.ActivateTypeMethod {
+		return s.moveNext(ctx, tx, message, expression.ElementId, moveActivate)
+	}
+	message.CurrentPosition = expression.ElementId
+	payload, err := json.Marshal(systemTask{Type: systemLoop, Message: message})
+	if err != nil {
+		return err
+	}
+	return s.queue.PushTx(ctx, tx, queue.Task{Kind: s.systemKind, Payload: payload})
 }

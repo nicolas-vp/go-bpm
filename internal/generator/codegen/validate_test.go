@@ -106,12 +106,12 @@ func TestUnsupportedElements(t *testing.T) {
     <bpmn:startEvent id="start" />
     <bpmn:endEvent id="end"><bpmn:terminateEventDefinition /></bpmn:endEvent>
     <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="end" />`, "end event end: terminateEventDefinition"},
-		{"multi-instance task", `
+		{"standard loop task", `
     <bpmn:startEvent id="start" />
-    <bpmn:task id="each"><bpmn:multiInstanceLoopCharacteristics /></bpmn:task>
+    <bpmn:task id="each"><bpmn:standardLoopCharacteristics /></bpmn:task>
     <bpmn:endEvent id="end" />
     <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="each" />
-    <bpmn:sequenceFlow id="f2" sourceRef="each" targetRef="end" />`, "task each: циклы и multi-instance"},
+    <bpmn:sequenceFlow id="f2" sourceRef="each" targetRef="end" />`, "task each: циклы (standardLoopCharacteristics) не поддерживаются"},
 		{"nested sub-process", `
     <bpmn:startEvent id="start" />
     <bpmn:subProcess id="outer">

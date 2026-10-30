@@ -22,4 +22,10 @@ type DataModel struct {
 
 	// Approved - решение задачи пользователя Approve в TestUserTask, приходит из формы при завершении задачи
 	Approved bool `json:"approved"`
+
+	// Notifications - сколько уведомлений отправила задача Notify в TestMultiInstance
+	Notifications int `json:"notifications"`
+	// LoopCounter - номер выполнения задачи в цикле multi-instance, с 1; после цикла переменной нет.
+	// omitempty: метод вне цикла не должен записать переменную нулём
+	LoopCounter int `json:"loopCounter,omitempty"`
 }

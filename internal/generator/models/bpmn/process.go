@@ -22,6 +22,8 @@ type Process struct {
 	BoundaryEvents    []BoundaryEvent    `xml:"boundaryEvent"`
 	// IntermediateCatchEvents - промежуточные события ожидания, поддерживается таймер
 	IntermediateCatchEvents []IntermediateCatchEvent `xml:"intermediateCatchEvent"`
+	// MultiInstance - последовательный цикл встроенного подпроцесса, nil - без цикла
+	MultiInstance *MultiInstance `xml:"multiInstanceLoopCharacteristics"`
 	// Other - элементы, которые генератор не поддерживает (inclusive gateway, manual task и т.п.), и служебные
 	// (документация, лейны, аннотации); первые - ошибка генерации
 	Other []Element `xml:",any"`

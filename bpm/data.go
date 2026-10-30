@@ -23,6 +23,17 @@ func Condition[T any](condition func(data *T) string) ConditionFunc {
 	}
 }
 
+// LoopCondition делает LoopConditionFunc из условия завершения цикла на модели данных процесса T
+func LoopCondition[T any](condition func(data *T) bool) LoopConditionFunc {
+	return func(variables map[string]any) (bool, error) {
+		data := new(T)
+		if err := toStruct(variables, data); err != nil {
+			return false, err
+		}
+		return condition(data), nil
+	}
+}
+
 // Method делает MethodFunc из метода на модели данных процесса T и сервисах S.
 // Сервисы задаются при старте и передаются методу при каждом вызове
 func Method[S, T any](services S, method func(ctx context.Context, services S, data *T) error) MethodFunc {

@@ -131,6 +131,10 @@ func (s *Engine) leaveByBoundary(ctx context.Context, tx queue.Tx, message *inst
 	if err := s.logHistory(ctx, tx, HistoryTerminated, message, task); err != nil {
 		return err
 	}
+	// граничное событие прерывает весь цикл, а не одно выполнение
+	if task.Loop != nil {
+		leaveLoop(message, task)
+	}
 	if cause != nil {
 		message.Variables = maps.Clone(message.Variables)
 		if message.Variables == nil {

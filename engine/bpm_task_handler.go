@@ -37,6 +37,11 @@ func (s *Engine) handleSystemTask(ctx context.Context, task *queue.Task) error {
 			return s.fireTimer(ctx, tx, st.Message, st.Boundary)
 		})
 		return nil
+	case systemLoop:
+		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveActivate)
+		})
+		return nil
 	case systemUserTask:
 		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
 			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveComplete)

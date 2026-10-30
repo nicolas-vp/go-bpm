@@ -58,7 +58,7 @@ func checkElements(process *bpmn.Process) error {
 			continue
 		}
 		if marker := bpmn.LoopMarker([]bpmn.Element{element}); marker != "" {
-			return fmt.Errorf("subProcess %s: циклы и multi-instance (%s) не поддерживаются", process.Id, marker)
+			return fmt.Errorf("subProcess %s: циклы (%s) не поддерживаются, только последовательный multi-instance", process.Id, marker)
 		}
 		return fmt.Errorf("%s %s не поддерживается", name, element.Id)
 	}
@@ -110,7 +110,7 @@ func checkElements(process *bpmn.Process) error {
 	}
 	for _, a := range activities {
 		if marker := bpmn.LoopMarker(a.other); marker != "" {
-			return fmt.Errorf("%s: циклы и multi-instance (%s) не поддерживаются", a.name, marker)
+			return fmt.Errorf("%s: циклы (%s) не поддерживаются, только последовательный multi-instance", a.name, marker)
 		}
 	}
 

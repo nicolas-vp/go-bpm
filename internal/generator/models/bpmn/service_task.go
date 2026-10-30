@@ -10,7 +10,9 @@ type ServiceTask struct {
 	IncomingList         []Incoming          `xml:"incoming"`
 	OutgoingList         []Outgoing          `xml:"outgoing"`
 	ExtensionElementList []ExtensionElements `xml:"extensionElements"`
-	// Other - остальные дочерние элементы: по ним находится маркер цикла (multi-instance)
+	// MultiInstance - последовательный цикл задачи, nil - без цикла
+	MultiInstance *MultiInstance `xml:"multiInstanceLoopCharacteristics"`
+	// Other - остальные дочерние элементы: по ним находится маркер цикла standardLoopCharacteristics
 	Other []Element `xml:",any"`
 }
 

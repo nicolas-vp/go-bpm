@@ -27,4 +27,16 @@ type Expression struct {
 	Boundaries []bpm.Boundary
 	// UserTask - назначение задачи пользователя
 	UserTask *bpm.UserTask
+	// Loop - последовательный multi-instance элемента, nil - без цикла
+	Loop *Loop
+}
+
+// Loop - последовательный multi-instance: число выполнений и условие завершения
+type Loop struct {
+	// Cardinality - loopCardinality, 0 - не задано
+	Cardinality int
+	// CompletionCondition - completionCondition как в процессе, без "=" FEEL
+	CompletionCondition string
+	// ConditionFunc - имя функции условия завершения в пакете процесса, пусто - условия нет
+	ConditionFunc string
 }

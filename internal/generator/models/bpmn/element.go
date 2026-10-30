@@ -9,11 +9,12 @@ type Element struct {
 	Id      string `xml:"id,attr"`
 }
 
-// LoopMarker возвращает имя маркера цикла задачи (multi-instance или standard loop), если он есть
+// LoopMarker возвращает имя маркера цикла задачи, который не поддерживается (standard loop), если он есть.
+// multiInstanceLoopCharacteristics разбирается в поле MultiInstance задачи и сюда не попадает
 func LoopMarker(elements []Element) string {
 	for _, element := range elements {
 		switch element.XMLName.Local {
-		case "multiInstanceLoopCharacteristics", "standardLoopCharacteristics":
+		case "standardLoopCharacteristics":
 			return element.XMLName.Local
 		}
 	}

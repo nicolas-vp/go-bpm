@@ -89,6 +89,19 @@ func TestCondition(t *testing.T) {
 	}
 }
 
+func TestLoopCondition(t *testing.T) {
+	condition := LoopCondition(func(data *testData) bool { return data.Count >= 3 })
+	if got, err := condition(map[string]any{"count": float64(3)}); err != nil || !got {
+		t.Errorf("count 3: %v, %v", got, err)
+	}
+	if got, err := condition(nil); err != nil || got {
+		t.Errorf("без переменных: %v, %v", got, err)
+	}
+	if _, err := condition(map[string]any{"count": "x"}); err == nil {
+		t.Error("переменная не того типа: ошибки нет")
+	}
+}
+
 func TestDeref(t *testing.T) {
 	n := 5
 	if Deref(&n) != 5 || Deref[int](nil) != 0 {

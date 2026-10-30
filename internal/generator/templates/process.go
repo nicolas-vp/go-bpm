@@ -72,6 +72,16 @@ func Deployment(svc *services.Services) map[string]bpm.DeploymentProcess {
 					{{- end }}
 				},
 				{{- end }}
+				{{- with $expr.Loop }}
+				Loop: &bpm.Loop{
+					{{- if .Cardinality }}
+					Cardinality:         {{ .Cardinality }},
+					{{- end }}
+					{{- if .ConditionFunc }}
+					CompletionCondition: bpm.LoopCondition({{ .ConditionFunc }}),
+					{{- end }}
+				},
+				{{- end }}
 			}, {{end}}
 		},
 	},  {{end}}

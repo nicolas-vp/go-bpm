@@ -106,6 +106,9 @@ func GenerateQueue(definitions []bpmn.Definitions, decisions map[string]Decision
 			if err := prepareConditionFiles(processes, process.Id, processPath, pkg, imports, dataModel, gaps); err != nil {
 				return fmt.Errorf("process %s: %w", process.Id, err)
 			}
+			if err := prepareLoopFiles(processes, process.Id, processPath, pkg, imports, dataModel, gaps); err != nil {
+				return fmt.Errorf("process %s: %w", process.Id, err)
+			}
 			if err := prepareMethodFiles(&process, processPath, pkg, imports, dataModel, gaps); err != nil {
 				return err
 			}
@@ -192,7 +195,7 @@ func mergeQueues(queues []model.Queue) []model.Queue {
 	return result
 }
 
-// checkFuncNames проверяет, что функции условий, методов и решений (decisions: имя - решение) не совпадают
+// checkFuncNames проверяет, что функции условий, условий завершения циклов, методов и решений (decisions: имя - решение) не совпадают
 // друг с другом и с reservedNames. Все они лежат в одном пакете, а имена получаются из id элементов и решений
 func checkFuncNames(processes []model.DeploymentProcess, decisions map[string]string) error {
 	owners := make(map[string]string)
@@ -204,7 +207,11 @@ func checkFuncNames(processes []model.DeploymentProcess, decisions map[string]st
 	}
 	for _, process := range processes {
 		for _, expression := range process.Expressions {
-			for _, name := range []string{expression.ConditionFunc, expression.MethodFunc} {
+			names := []string{expression.ConditionFunc, expression.MethodFunc}
+			if expression.Loop != nil {
+				names = append(names, expression.Loop.ConditionFunc)
+			}
+			for _, name := range names {
 				if name == "" {
 					continue
 				}

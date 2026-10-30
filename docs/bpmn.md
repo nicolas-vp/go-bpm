@@ -48,6 +48,7 @@
 | Boundary error event (прерывающий) | ✓ | у task, scriptTask, serviceTask |
 | Embedded sub-process | ✓ | отдельный дочерний экземпляр |
 | Call activity (`zeebe:calledElement`) | ✓ | экземпляр другого процесса |
+| Последовательный multi-instance | ✓ | у задач, подпроцесса и call activity: `loopCardinality` и/или `completionCondition` |
 | Всё остальное | ✗ | см. [что не поддерживается](#что-не-поддерживается) |
 
 ## События начала и конца
@@ -384,6 +385,36 @@ return bpm.NewError("LIMIT_EXCEEDED", "превышен лимит клиент�
 - Вызываемый процесс должен быть в том же сервисе (в `process/`). Маппинг входов и выходов (`zeebe:ioMapping`)
   не поддерживается.
 
+## Последовательный multi-instance
+
+Маркер «три горизонтальные черты» у задачи, подпроцесса или call activity: элемент выполняется несколько раз подряд.
+В Camunda Modeler: гаечный ключ на элементе → **Sequential multi-instance**, затем в XML или панели свойств — число
+выполнений и условие завершения.
+
+```xml
+<bpmn:userTask id="Review" name="Согласовать (до трёх кругов)">
+  <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+    <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">3</bpmn:loopCardinality>
+    <bpmn:completionCondition xsi:type="bpmn:tFormalExpression">=approved</bpmn:completionCondition>
+  </bpmn:multiInstanceLoopCharacteristics>
+</bpmn:userTask>
+```
+
+- `loopCardinality` — сколько раз выполнить элемент, целая константа больше нуля. Выражения не поддерживаются.
+- `completionCondition` — условие завершения, как условие шлюза: FEEL или Go на переменных процесса, генерируется
+  в `loop_<id>.go`. Проверяется **после** каждого выполнения: `true` — цикл закончен.
+- Нужно хотя бы одно из двух. Если заданы оба, цикл кончается тем, что наступит раньше. Только с условием цикл идёт,
+  пока условие не выполнится.
+- Номер выполнения, с 1, — переменная `loopCounter`. Её видят элемент и условие. Чтобы читать её в методе или
+  условии, добавьте в модель поле `` LoopCounter int `json:"loopCounter,omitempty"` `` (`omitempty`: метод вне цикла
+  не запишет переменную нулём). После цикла переменной нет.
+- Переменные переходят из выполнения в выполнение: то, что записал первый проход, видит второй.
+- Каждое выполнение task и scriptTask — отдельный шаг очереди: упавшее выполнение повторяется одно, не весь цикл.
+- Граничное событие ошибки прерывает весь цикл. Граничный таймер у элемента с циклом не поддерживается: в BPMN он
+  ограничивает весь цикл, а не одно выполнение.
+- Не поддерживаются параллельный multi-instance (`isSequential` не задан), цикл по коллекции
+  (`zeebe:loopCharacteristics inputCollection`, `camunda:collection`) и standard loop.
+
 ## Что не поддерживается
 
 Генератор отвергает всё неподдерживаемое с ошибкой, которая называет элемент: процесс, который сгенерировался, не
@@ -395,7 +426,7 @@ return bpm.NewError("LIMIT_EXCEEDED", "превышен лимит клиент�
 - manual task, send task, receive task;
 - промежуточные throw events, message и signal catch events, event sub-process;
 - подпроцесс внутри подпроцесса, transaction, ad-hoc sub-process;
-- multi-instance и циклы (маркер у задачи или подпроцесса);
+- параллельный multi-instance, multi-instance по коллекции, standard loop (см. [multi-instance](#последовательный-multi-instance));
 - несколько start event, start event с таймером, сообщением или сигналом;
 - end event с terminate, error, message, escalation.
 

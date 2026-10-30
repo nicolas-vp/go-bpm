@@ -20,6 +20,8 @@ const (
 	systemTimer = "_system.timer"
 	// systemUserTask - задачу пользователя завершили через API: токен идёт дальше
 	systemUserTask = "_system.userTask"
+	// systemLoop - следующее выполнение метода task или scriptTask с циклом: каждое выполнение - отдельный шаг
+	systemLoop = "_system.loop"
 )
 
 // instanceMessage - токен экземпляра процесса: где он стоит и с какими переменными.
@@ -35,6 +37,8 @@ type instanceMessage struct {
 	ParentProcess   map[uuid.UUID]*parentProcess
 	// WaitId - строка bpm_wait задачи с граничными таймерами, пока она ждёт завершения (см. bpm_wait)
 	WaitId uuid.UUID `json:",omitzero"`
+	// Loops - номер текущего выполнения элементов с циклом (multi-instance) по loopKey, пока цикл идёт
+	Loops map[string]int `json:",omitempty"`
 }
 
 // parentProcess - родитель экземпляра подпроцесса или callActivity, в который вернётся токен
@@ -65,5 +69,6 @@ func (message *instanceMessage) clone() *instanceMessage {
 	clone.Headers = maps.Clone(message.Headers)
 	clone.Variables = maps.Clone(message.Variables)
 	clone.ParentProcess = maps.Clone(message.ParentProcess)
+	clone.Loops = maps.Clone(message.Loops)
 	return &clone
 }
