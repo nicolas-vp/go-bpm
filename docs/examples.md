@@ -445,6 +445,8 @@ completed  End
 
 ## TestMultiInstance: последовательный multi-instance
 
+![TestMultiInstance: «Отправить уведомление» и «Согласовать (до трёх кругов)» с маркером последовательного multi-instance](images/demo-multi-instance.svg)
+
 Start → «Отправить уведомление» (task, цикл `loopCardinality` 3) → «Согласовать (до трёх кругов)» (user task для
 группы `managers`, цикл `loopCardinality` 3 и `completionCondition` `=approved`) → End.
 
@@ -466,6 +468,8 @@ curl -XPOST localhost:8080/api/v1/tasks/<id>/complete -d '{"userId":"bob","varia
 ---
 
 ## TestMessage: ожидание сообщения
+
+![TestMessage: receive task «Дождаться оплаты» между стартом и концом](images/demo-message.svg)
 
 Start → «Дождаться оплаты» (receive task, сообщение `paymentReceived`) → End. У `bpmn:message` нет
 `zeebe:subscription`, поэтому ключ корреляции — бизнес-ключ экземпляра.
