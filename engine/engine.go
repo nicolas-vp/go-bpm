@@ -60,7 +60,9 @@ type Config struct {
 	History HistoryConfig
 	// RulesHistory - история бизнес-правил (таблица bpm_rules_history), флаги отдельные от History
 	RulesHistory HistoryConfig
-	Logger       *slog.Logger
+	// Hooks - точки подключения: события элементов, обёртка вызовов кода сервиса, падения экземпляров
+	Hooks  Hooks
+	Logger *slog.Logger
 }
 
 type Engine struct {
@@ -76,6 +78,7 @@ type Engine struct {
 	rulesHistory HistoryConfig
 	// historyOut - куда выводится история на экран
 	historyOut io.Writer
+	hooks      Hooks
 	log        *slog.Logger
 }
 
@@ -106,6 +109,7 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 		history:      config.History,
 		rulesHistory: config.RulesHistory,
 		historyOut:   os.Stdout,
+		hooks:        config.Hooks,
 		log:          config.Logger,
 	}
 

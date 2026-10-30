@@ -7,6 +7,7 @@ import (
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
 	test_bpm_process "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_bpm_process"
 	test_decision "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_decision"
+	test_message "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_message"
 	test_multi_instance "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_multi_instance"
 	test_sub_process "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_sub_process"
 	test_timer_and_exception "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_timer_and_exception"
@@ -19,6 +20,7 @@ func Processes(svc *services.Services) map[string]bpm.Process {
 	return map[string]bpm.Process{
 		"TestBpmProcess":        {Flows: test_bpm_process.Deployment(svc), BPMN: bpmn_files.BPMN["test-bpm-engine.bpmn"]},
 		"TestDecision":          {Flows: test_decision.Deployment(svc), BPMN: bpmn_files.BPMN["testBusinessRule.bpmn"]},
+		"TestMessage":           {Flows: test_message.Deployment(svc), BPMN: bpmn_files.BPMN["testMessage.bpmn"]},
 		"TestMultiInstance":     {Flows: test_multi_instance.Deployment(svc), BPMN: bpmn_files.BPMN["testMultiInstance.bpmn"]},
 		"TestTimerAndException": {Flows: test_timer_and_exception.Deployment(svc), BPMN: bpmn_files.BPMN["testTimerAndException.bpmn"]},
 		"TestUserTask":          {Flows: test_user_task.Deployment(svc), BPMN: bpmn_files.BPMN["testUserTask.bpmn"]},

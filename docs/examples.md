@@ -1,6 +1,6 @@
 # Разбор примеров
 
-В `examples/demo` — демо-сервис с пятью процессами. Каждый показывает свою часть go-bpm. Для каждого ниже: схема,
+В `examples/demo` — демо-сервис с семью процессами. Каждый показывает свою часть go-bpm. Для каждого ниже: схема,
 как он устроен в BPMN, что сгенерировано, как запустить и что увидеть.
 
 Запуск демо — [Быстрый старт](quickstart.md#демо-за-пять-минут). Команды ниже предполагают сервис на `:8080`.
@@ -12,11 +12,14 @@
 | [`TestBpmProcess`](#testbpmprocess-шлюзы-скрипт-параллельные-ветки-call-activity) | `test-bpm-engine.bpmn` | методы, service task, call activity, exclusive и parallel gateway, script task |
 | [`testSubProcess`](#testsubprocess-параллельные-service-task) | `testSubProcess.bpmn` | параллельные service task со слиянием |
 | [`TestTimerAndException`](#testtimerandexception-таймеры-и-ошибки) | `testTimerAndException.bpmn` | таймер, граничные таймеры и ошибки |
+| [`TestMultiInstance`](#testmultiinstance-последовательный-multi-instance) | `testMultiInstance.bpmn` | последовательный multi-instance: число выполнений и условие завершения |
+| [`TestMessage`](#testmessage-ожидание-сообщения) | `testMessage.bpmn` | receive task ждёт сообщение по бизнес-ключу |
 
 Общие файлы демо:
 
 - `bpmgen/model/data_model.go` — модель: `Amount int` (шлюз `TestBpmProcess`), `A`, `B`, `C`, `D string` (решения
-  `TestDecision`), `Approved bool` (шлюз `TestUserTask`);
+  `TestDecision`), `Approved bool` (шлюз `TestUserTask`, условие цикла `TestMultiInstance`), `Notifications`,
+  `LoopCounter int` (`TestMultiInstance`);
 - `bpmgen/services/services.go` — пустой `Services`: внешних зависимостей у демо нет;
 - `bpmgen/handlers/` — обработчики `doSomeAsync`, `failingTask`, `slowTask`, `paralel1`…`paralel4` — заглушки,
   которые сразу возвращают `nil`;
@@ -437,6 +440,43 @@ completed  End
 > ждала в очереди, пока первый обработчик спит. Граничный таймер отсчитывается от постановки задачи. Если задач
 > одного jobType много, увеличьте `TaskWorkers` или число экземпляров сервиса. Так же считает и Camunda: таймер
 > стартует, когда задача активирована, а не когда её взял воркер.
+
+---
+
+## TestMultiInstance: последовательный multi-instance
+
+Start → «Отправить уведомление» (task, цикл `loopCardinality` 3) → «Согласовать (до трёх кругов)» (user task для
+группы `managers`, цикл `loopCardinality` 3 и `completionCondition` `=approved`) → End.
+
+- Метод `Notify` (`bpmgen/test_multi_instance/method_notify.go`) пишет номер выполнения `data.LoopCounter` в
+  `notifications`: после цикла там 3. Каждое выполнение — отдельный шаг очереди.
+- «Согласовать» создаётся заново, пока задачу не завершат с `approved: true`, но не больше трёх раз. Условие
+  сгенерировано в `loop_review.go`: `return data.Approved`.
+
+```sh
+curl -XPOST localhost:8080/api/v1/processes/TestMultiInstance/instances -d '{}'
+curl 'localhost:8080/api/v1/tasks?candidateUser=bob&candidateGroup=managers'
+curl -XPOST localhost:8080/api/v1/tasks/<id>/claim -d '{"userId":"bob","groups":["managers"]}'
+curl -XPOST localhost:8080/api/v1/tasks/<id>/complete -d '{"userId":"bob","variables":{"approved":false}}'
+# появилась новая задача «Согласовать», в её переменных loopCounter = 2; завершите её с approved: true - экземпляр закончится
+```
+
+В истории «Отправить уведомление» — три записи `completed`, «Согласовать» — по одной на каждый круг.
+
+---
+
+## TestMessage: ожидание сообщения
+
+Start → «Дождаться оплаты» (receive task, сообщение `paymentReceived`) → End. У `bpmn:message` нет
+`zeebe:subscription`, поэтому ключ корреляции — бизнес-ключ экземпляра.
+
+```sh
+curl -XPOST localhost:8080/api/v1/processes/TestMessage/instances -d '{"businessKey":"order-1"}'
+curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correlationKey":"order-1","variables":{"paid":true}}'
+# {"correlated":1} - экземпляр завершён, в переменных paid: true
+curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correlationKey":"order-2","ttl":"10m"}'
+# {"correlated":0} - сообщение ждёт: экземпляр с бизнес-ключом order-2, запущенный в ближайшие 10 минут, сразу пройдёт ожидание
+```
 
 ---
 

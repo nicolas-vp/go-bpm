@@ -4,11 +4,11 @@ package process
 
 import "embed"
 
-//go:embed "test-bpm-engine.bpmn" "testBusinessRule.bpmn" "testMultiInstance.bpmn" "testSubProcess.bpmn" "testTimerAndException.bpmn" "testUserTask.bpmn" "businessRule.dmn"
+//go:embed "test-bpm-engine.bpmn" "testBusinessRule.bpmn" "testMessage.bpmn" "testMultiInstance.bpmn" "testSubProcess.bpmn" "testTimerAndException.bpmn" "testUserTask.bpmn" "businessRule.dmn"
 var files embed.FS
 
 // BPMN - BPMN-файлы по пути относительно этой папки, по ним движок рисует диаграмму с историей экземпляра
-var BPMN = readFiles("test-bpm-engine.bpmn", "testBusinessRule.bpmn", "testMultiInstance.bpmn", "testSubProcess.bpmn", "testTimerAndException.bpmn", "testUserTask.bpmn")
+var BPMN = readFiles("test-bpm-engine.bpmn", "testBusinessRule.bpmn", "testMessage.bpmn", "testMultiInstance.bpmn", "testSubProcess.bpmn", "testTimerAndException.bpmn", "testUserTask.bpmn")
 
 // DMN - DMN-файлы по пути относительно этой папки, по ним страница истории показывает сработавшие правила
 var DMN = readFiles("businessRule.dmn")

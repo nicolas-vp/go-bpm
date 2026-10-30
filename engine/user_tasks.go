@@ -122,11 +122,34 @@ for update`
 
 	unclaimUserTaskQuery = `update bpm_user_task set assignee = null, claimed_at = null, updated_at = now() where task_uid = $1`
 
+	// terminateUserTaskQuery - граничный таймер прерывает задачу этой активации (WaitId), если её ещё не завершили.
+	// update блокирует строку, как lockUserTaskQuery в Complete, поэтому таймер и Complete не разойдутся
+	terminateUserTaskQuery = `
+update bpm_user_task
+set status = 'cancelled', updated_at = now()
+where instance_uid = $1 and element_id = $2 and status = 'created' and message ->> 'WaitId' = $3`
+
 	completeUserTaskQuery = `
 update bpm_user_task
 set status = 'completed', completed_by = $2, completed_at = now(), updated_at = now()
 where task_uid = $1`
 )
+
+// terminateUserTask - сработал граничный таймер задачи пользователя: задача отменяется, если её ещё не завершили.
+// false - задачу уже завершили через API: токен поведёт её системная задача, таймер проиграл. Судья - статус
+// строки bpm_user_task: Complete и таймер блокируют её, кто первый сменил статус, тот и ведёт токен
+func (s *Engine) terminateUserTask(ctx context.Context, tx queue.Tx, message *instanceMessage) (bool, error) {
+	tag, err := tx.Exec(ctx, terminateUserTaskQuery, message.InstanceUid, message.CurrentPosition, message.WaitId.String())
+	if err != nil {
+		return false, fmt.Errorf("user task: terminate: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		s.log.InfoContext(ctx, "user task already completed, timer ignored", "process", message.ProcessName,
+			"instance", message.InstanceUid, "element", message.CurrentPosition)
+		return false, nil
+	}
+	return true, nil
+}
 
 // activateUserTask - токен пришёл в задачу пользователя: создаём её, дальше токен поведёт Complete.
 // Назначение, которое не вычислилось (нет переменной, не строка), пропускается с предупреждением в логе: задача
@@ -151,6 +174,10 @@ func (s *Engine) activateUserTask(ctx context.Context, tx queue.Tx, message *ins
 	}
 	taskUid, err := uuid.NewV7()
 	if err != nil {
+		return err
+	}
+	// граничные таймеры: строка bpm_wait и задачи таймеров; WaitId попадает в токен задачи
+	if _, err := s.startWait(ctx, tx, message, expression); err != nil {
 		return err
 	}
 	payload, err := json.Marshal(message)

@@ -74,6 +74,7 @@ internal/bpmgen/
   <процесс>/                       пакет процесса, имя — id процесса в snake_case
     flow-gen.go                    ⚙ Deployment(svc): схема процесса и его подпроцессов
     cond_<id шлюза>.go             ⚙ условие exclusive gateway
+    loop_<id элемента>.go          ⚙ условие завершения multi-instance (completionCondition)
     method_<id задачи>.go          ✎ task — ваш метод
                                    ⚙ scriptTask, businessRuleTask — генерируется
     decision_<id решения>.go       ⚙ решение DMN, которое вызывает процесс

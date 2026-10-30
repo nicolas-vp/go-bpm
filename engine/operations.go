@@ -239,6 +239,7 @@ func (o *InstanceOperations) cancel(ctx context.Context, instanceUid uuid.UUID) 
 			{"queue tasks", cancelQueueTasksQuery, uuidStrings(tree)},
 			{"user tasks", cancelUserTasksQuery, tree},
 			{"waits", deleteWaitsQuery, tree},
+			{"message subscriptions", deleteSubscriptionsQuery, tree},
 			{"instances", cancelInstancesQuery, tree},
 		} {
 			if _, err := tx.Exec(ctx, step.query, step.arg); err != nil {

@@ -105,6 +105,9 @@ func checkElements(process *bpmn.Process) error {
 	for _, task := range process.UserTasks {
 		activities = append(activities, activity{"userTask " + task.Id, task.Other})
 	}
+	for _, task := range process.ReceiveTasks {
+		activities = append(activities, activity{"receiveTask " + task.Id, task.Other})
+	}
 	for _, callActivity := range process.CallActivityList {
 		activities = append(activities, activity{"callActivity " + callActivity.Id, callActivity.Other})
 	}
@@ -152,6 +155,10 @@ func flowNodes(process *bpmn.Process) []flowNode {
 	for i := range process.UserTasks {
 		t := &process.UserTasks[i]
 		nodes = append(nodes, flowNode{kind: "userTask", id: t.Id, incoming: &t.IncomingList, outgoing: &t.OutgoingList})
+	}
+	for i := range process.ReceiveTasks {
+		t := &process.ReceiveTasks[i]
+		nodes = append(nodes, flowNode{kind: "receiveTask", id: t.Id, incoming: &t.IncomingList, outgoing: &t.OutgoingList})
 	}
 	for i := range process.ExclusiveGateways {
 		g := &process.ExclusiveGateways[i]

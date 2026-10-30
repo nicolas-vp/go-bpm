@@ -6,6 +6,7 @@ JSON API (`httpapi`) и веб-консоль (`webui`) работают на о
 mux := http.NewServeMux()
 httpapi.Register(mux, e, history)                                  // /api/v1/processes, /api/v1/instances
 httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, e)) // /api/v1/tasks
+httpapi.RegisterMessages(mux, e)                                   // /api/v1/messages
 webui.Register(mux, history)                                       // /ui/, /ui/history/
 ```
 
@@ -219,7 +220,7 @@ BPMN, сам callActivity считается от запуска до возвр
 | 400 | неверный id или JSON, нет `userId` |
 | 403 | не кандидат (`claim`) |
 | 404 | нет задачи |
-| 409 | выполнена, взята другим, не назначена пользователю |
+| 409 | выполнена, отменена (в том числе граничным таймером), взята другим, не назначена пользователю |
 
 ### Из Go без HTTP
 
@@ -281,6 +282,35 @@ httpapi.RegisterOperations(mux, engine.NewInstanceOperations(pool, e))
 
 Из Go — те же методы `engine.InstanceOperations`: `ListFailures`, `Retry`, `Cancel`; ошибки `ErrFailureNotFound`,
 `ErrNotRootInstance`, `ErrInstanceFinished`, `ErrInstanceNotFound`.
+
+## Сообщения
+
+Подключаются отдельно, `httpapi.RegisterMessages(mux, e)`. Как моделировать ожидание — [BPMN → сообщения](bpmn.md#сообщения).
+
+### `POST /api/v1/messages`
+
+Передать сообщение токенам, которые его ждут (receive task, промежуточное событие сообщения):
+
+```json
+{"name": "paymentReceived", "correlationKey": "order-1", "variables": {"paid": true}, "ttl": "10m"}
+```
+
+- `name` — имя `bpmn:message`, `correlationKey` — бизнес-ключ экземпляра или значение переменной из
+  `zeebe:subscription`. Оба обязательны.
+- `variables` добавляются к переменным процесса каждого токена, который получил сообщение.
+- `ttl` (длительность Go, необязательно) — если сообщение никто не ждёт, оно сохраняется на это время и достанется
+  первому токену, который подпишется.
+
+Ответ `200 {"correlated": 1}` — скольким токенам досталось сообщение; `0` — сообщение сохранено до подписки (ttl).
+Токены идут дальше через очередь, как после `complete` задачи пользователя.
+
+| Код | Когда |
+|---|---|
+| 400 | неверный JSON или `ttl`, нет `name` или `correlationKey` |
+| 404 | сообщение никто не ждёт, а `ttl` не задан |
+
+Из Go — `e.CorrelateMessage(ctx, name, key, variables, engine.WithMessageTTL(ttl))` или `CorrelateMessageTx` в транзакции
+сервиса; ошибки `engine.ErrMessageNotCorrelated`, `ErrMessageRequired`.
 
 ## Консоль
 

@@ -2,7 +2,7 @@ package bpmn
 
 import "encoding/xml"
 
-// IntermediateCatchEvent - промежуточное событие ожидания, поддерживается только таймер
+// IntermediateCatchEvent - промежуточное событие ожидания: таймер или сообщение
 type IntermediateCatchEvent struct {
 	XMLName               xml.Name               `xml:"intermediateCatchEvent"`
 	Name                  string                 `xml:"name,attr"`
@@ -10,5 +10,7 @@ type IntermediateCatchEvent struct {
 	IncomingList          []Incoming             `xml:"incoming"`
 	OutgoingList          []Outgoing             `xml:"outgoing"`
 	TimerEventDefinitions []TimerEventDefinition `xml:"timerEventDefinition"`
-	OtherDefinitions      []EventDefinition      `xml:",any"`
+	// MessageEventDefinitions - ожидание сообщения
+	MessageEventDefinitions []MessageEventDefinition `xml:"messageEventDefinition"`
+	OtherDefinitions        []EventDefinition        `xml:",any"`
 }

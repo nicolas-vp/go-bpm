@@ -2,7 +2,7 @@
 GO_BPM_TEST_DSN ?= postgres://postgres:postgres@localhost:5432/go_bpm_test?sslmode=disable
 GO_BPM_DSN ?= postgres://postgres:postgres@localhost:5432/go_bpm?sslmode=disable
 
-.PHONY: build test test-unit generate run lint docker
+.PHONY: build test test-unit generate run lint vulncheck docker
 
 build:
 	go build ./...
@@ -25,6 +25,10 @@ run:
 lint:
 	go vet ./...
 	test -z "$$(gofmt -l .)"
+
+# известные уязвимости в вызываемом коде модулей и стандартной библиотеки установленного Go
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 # образ демо-сервиса, как его собирает CI (ghcr.io/nicolas-vp/go-bpm)
 docker:

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -350,5 +351,36 @@ func TestMethodBoundaries(t *testing.T) {
 			}
 			tt.wantHistoryTail(tc.want...)
 		})
+	}
+}
+
+func TestTimerDelay(t *testing.T) {
+	future := time.Now().Add(time.Hour).Format(time.RFC3339)
+	message := &instanceMessage{ProcessName: "p", Variables: map[string]any{
+		"due":   future,
+		"order": map[string]any{"due": "2001-01-01T00:00:00Z"},
+		"bad":   "tomorrow",
+		"count": float64(1),
+	}}
+	if delay, err := timerDelay(message, "t", 5*time.Second, ""); err != nil || delay != 5*time.Second {
+		t.Errorf("duration: %v, %v", delay, err)
+	}
+	for _, date := range []string{future, "${due}"} {
+		if delay, err := timerDelay(message, "t", 0, date); err != nil || delay < 59*time.Minute || delay > time.Hour {
+			t.Errorf("%s: delay %v, err %v, want ~1h", date, delay, err)
+		}
+	}
+	// срок прошёл - таймер срабатывает сразу
+	if delay, err := timerDelay(message, "t", 0, "${order.due}"); err != nil || delay != 0 {
+		t.Errorf("past: delay %v, err %v", delay, err)
+	}
+	for date, want := range map[string]string{
+		"${missing}": `variable "missing" not found`,
+		"${count}":   "date string expected",
+		"${bad}":     `date "tomorrow"`,
+	} {
+		if _, err := timerDelay(message, "t", 0, date); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", date, err, want)
+		}
 	}
 }

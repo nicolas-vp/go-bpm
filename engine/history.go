@@ -52,12 +52,12 @@ type HistoryRecord struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
-// logHistory вызывается после выполнения каждого элемента процесса (HistoryCompleted) и при запуске service task
+// logHistory вызывается после выполнения каждого элемента процесса (и передаёт событие в Hooks.OnElement) (HistoryCompleted) и при запуске service task
 // (HistoryActivated). Запись в базу идёт в tx шага, поэтому появится только вместе с переходом токена;
 // вывод на экран при откате шага не отменяется
 func (s *Engine) logHistory(ctx context.Context, tx queue.Tx, event string, message *instanceMessage, expression *bpm.Expression) error {
 	toLog, toDB := enabled(s.history.ToLog), enabled(s.history.ToDB)
-	if !toLog && !toDB {
+	if !toLog && !toDB && s.hooks.OnElement == nil {
 		return nil
 	}
 	record := HistoryRecord{
@@ -77,6 +77,9 @@ func (s *Engine) logHistory(ctx context.Context, tx queue.Tx, event string, mess
 		record.Variables = make(map[string]any, len(message.Variables))
 		maps.Copy(record.Variables, message.Variables)
 	}
+	if s.hooks.OnElement != nil {
+		s.hooks.OnElement(ctx, record)
+	}
 	if toLog {
 		printHistory(s.historyOut, record)
 	}
@@ -88,11 +91,12 @@ func (s *Engine) logHistory(ctx context.Context, tx queue.Tx, event string, mess
 
 // recordsVariables - пишутся ли переменные для записи элемента: старт процесса (в том числе встроенного подпроцесса
 // и процесса callActivity), задачи: task и scriptTask (Method), service task (Queue), callActivity, userTask
-// (по завершению видны переменные из формы), и граничные события - по ним видно errorCode и errorMessage ошибки задачи.
+// (по завершению видны переменные из формы), ожидание сообщения (видны переменные сообщения), и граничные события - по ним видно errorCode и errorMessage ошибки задачи.
 // Переходы, шлюзы и остальные события без переменных, чтобы история не росла снимком на каждый sequence flow
 func (s *Engine) recordsVariables(message *instanceMessage, expression *bpm.Expression) bool {
 	switch expression.ActivateType {
-	case bpm.ActivateTypeMethod, bpm.ActivateTypeQueue, bpm.ActivateTypeCallActivity, bpm.ActivateTypeBoundary, bpm.ActivateTypeUserTask:
+	case bpm.ActivateTypeMethod, bpm.ActivateTypeQueue, bpm.ActivateTypeCallActivity, bpm.ActivateTypeBoundary, bpm.ActivateTypeUserTask,
+		bpm.ActivateTypeMessage:
 		return true
 	}
 	process, err := s.getProcess(message.ProcessName)

@@ -20,6 +20,8 @@ const (
 	systemTimer = "_system.timer"
 	// systemUserTask - задачу пользователя завершили через API: токен идёт дальше
 	systemUserTask = "_system.userTask"
+	// systemMessage - токен получил сообщение (CorrelateMessage): идёт дальше
+	systemMessage = "_system.message"
 	// systemLoop - следующее выполнение метода task или scriptTask с циклом: каждое выполнение - отдельный шаг
 	systemLoop = "_system.loop"
 )

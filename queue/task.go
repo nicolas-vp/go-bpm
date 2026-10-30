@@ -55,6 +55,8 @@ type Task struct {
 	// Attempt - номер текущей попытки, с 1
 	Attempt     int
 	MaxAttempts int
+	// Err - почему задача упала, заполняется для KindOptions.OnFailed
+	Err error
 
 	callbacks []Callback
 }

@@ -26,15 +26,16 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 	}
 	if moveType == moveComplete {
 		switch expression.ActivateType {
-		case bpm.ActivateTypeQueue:
-			// задачу с граничными таймерами мог уже прервать таймер
+		case bpm.ActivateTypeQueue, bpm.ActivateTypeUserTask:
+			// задачу с граничными таймерами мог уже прервать таймер. У задачи пользователя судья - её статус
+			// (terminateUserTask): завершённую через API таймер уже не прервёт, а здесь снимаются её таймеры
 			won, err := s.finishWait(ctx, tx, message, expression)
 			if err != nil || !won {
 				return err
 			}
 			activateType = bpm.ActivateTypeFlow
 		case bpm.ActivateTypeSyncQueue, bpm.ActivateTypeStartSubprocess, bpm.ActivateTypeCallActivity, bpm.ActivateTypeTimer,
-			bpm.ActivateTypeUserTask:
+			bpm.ActivateTypeMessage:
 			activateType = bpm.ActivateTypeFlow
 		}
 	}
@@ -59,6 +60,9 @@ func (s *Engine) moveNext(ctx context.Context, tx queue.Tx, message *instanceMes
 
 	case bpm.ActivateTypeUserTask:
 		return s.activateUserTask(ctx, tx, message, expression)
+
+	case bpm.ActivateTypeMessage:
+		return s.activateMessage(ctx, tx, message, expression)
 
 	case bpm.ActivateTypeBoundary:
 		return fmt.Errorf("process %q: boundary event %q is reached by sequence flow", message.ProcessName, expression.ElementId)

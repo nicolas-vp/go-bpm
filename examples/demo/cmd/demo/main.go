@@ -15,6 +15,11 @@
 //	curl -XPOST localhost:8080/api/v1/tasks/<task id>/complete -d '{"userId":"bob","variables":{"approved":true}}'
 //	open http://localhost:8080/ui/history/?instanceId=<id>
 //
+// Сообщения: TestMessage ждёт оплату заказа по бизнес-ключу
+//
+//	curl -XPOST localhost:8080/api/v1/processes/TestMessage/instances -d '{"businessKey":"order-1"}'
+//	curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correlationKey":"order-1","variables":{"paid":true}}'
+//
 // Метрики Prometheus:
 //
 //	curl localhost:8080/metrics
@@ -113,6 +118,7 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 	httpapi.Register(mux, bpmEngine, historyReader)
 	httpapi.RegisterUserTasks(mux, engine.NewUserTaskService(pool, bpmEngine))
 	httpapi.RegisterOperations(mux, engine.NewInstanceOperations(pool, bpmEngine))
+	httpapi.RegisterMessages(mux, bpmEngine)
 	webui.Register(mux, historyReader)
 	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))

@@ -158,6 +158,9 @@ func TestOnFailed(t *testing.T) {
 	q := newQueue(t, pool)
 	failing := func(ctx context.Context, task *queue.Task) error { return queue.ErrNonRetryable }
 	q.Register("t.onfailed", failing, queue.KindOptions{MaxAttempts: 3, OnFailed: func(ctx context.Context, tx queue.Tx, task *queue.Task) error {
+		if !errors.Is(task.Err, queue.ErrNonRetryable) {
+			t.Errorf("task.Err = %v, want ErrNonRetryable", task.Err)
+		}
 		_, err := tx.Exec(ctx, `insert into queue_test_marks (key) values ('failed')`)
 		return err
 	}})

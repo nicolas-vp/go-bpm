@@ -46,10 +46,14 @@ func Deployment(svc *services.Services) map[string]bpm.DeploymentProcess {
 				{{- if $expr.Timer }}
 				Timer:                {{ duration $expr.Timer }},
 				{{- end }}
+				{{- if $expr.TimerDate }}
+				TimerDate:            {{ printf "%q" $expr.TimerDate }},
+				{{- end }}
 				{{- if $expr.Boundaries }}
 				Boundaries: []bpm.Boundary{ {{range $b := $expr.Boundaries}}
 					{ElementId: "{{ $b.ElementId }}", Type: bpm.BoundaryType{{ boundaryType $b.Type }}
 					{{- if $b.Timer }}, Timer: {{ duration $b.Timer }}{{ end }}
+					{{- if $b.TimerDate }}, TimerDate: {{ printf "%q" $b.TimerDate }}{{ end }}
 					{{- if $b.ErrorCode }}, ErrorCode: {{ printf "%q" $b.ErrorCode }}{{ end }}}, {{end}}
 				},
 				{{- end }}
@@ -69,6 +73,14 @@ func Deployment(svc *services.Services) map[string]bpm.DeploymentProcess {
 					{{- end }}
 					{{- if .FormKey }}
 					FormKey:         {{ printf "%q" .FormKey }},
+					{{- end }}
+				},
+				{{- end }}
+				{{- with $expr.Message }}
+				Message: &bpm.Message{
+					Name:           {{ printf "%q" .Name }},
+					{{- if .CorrelationKey }}
+					CorrelationKey: {{ printf "%q" .CorrelationKey }},
 					{{- end }}
 				},
 				{{- end }}

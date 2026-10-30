@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/nicolas-vp/go-bpm/bpm"
@@ -11,11 +12,13 @@ import (
 	"github.com/nicolas-vp/go-bpm/internal/generator/utils"
 )
 
-// ParseFromProcess - получить выражения из процесса. errorCodes - коды bpmn:error по id из definitions
-func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes map[string]string) (map[string]*model.Expression, error) {
+// ParseFromProcess - получить выражения из процесса. definition - файл процесса: в нём bpmn:error и bpmn:message,
+// на которые ссылаются события и задачи
+func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, definition *bpmn.Definitions) (map[string]*model.Expression, error) {
 	if err := prepareProcess(process); err != nil {
 		return nil, err
 	}
+	errorCodes, messages := definition.ErrorCodes(), definition.MessagesById()
 	expressions := make(map[string]*model.Expression)
 	for _, task := range process.ServiceTasks {
 		expressions[task.Id] = CreateExpressionFromServiceTask(&task, process)
@@ -44,6 +47,13 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes m
 		}
 		expressions[task.Id] = expression
 	}
+	for _, task := range process.ReceiveTasks {
+		expression, err := CreateExpressionFromReceiveTask(&task, process, messages)
+		if err != nil {
+			return nil, err
+		}
+		expressions[task.Id] = expression
+	}
 	for _, flow := range process.SequenceFlowList {
 		expressions[flow.Id] = CreateExpressionFromSequenceFlow(&flow)
 	}
@@ -66,7 +76,7 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes m
 		expressions[callActivity.Id] = CreateExpressionFromCallActivity(&callActivity, process)
 	}
 	for _, event := range process.IntermediateCatchEvents {
-		expression, err := CreateExpressionFromIntermediateCatchEvent(&event, process)
+		expression, err := CreateExpressionFromIntermediateCatchEvent(&event, process, messages)
 		if err != nil {
 			return nil, err
 		}
@@ -92,15 +102,30 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, errorCodes m
 	return expressions, nil
 }
 
-// CreateExpressionFromIntermediateCatchEvent - промежуточный таймер: токен ждёт timeDuration и идёт дальше
-func CreateExpressionFromIntermediateCatchEvent(event *bpmn.IntermediateCatchEvent, process *bpmn.Process) (*model.Expression, error) {
+// CreateExpressionFromIntermediateCatchEvent - промежуточное событие: таймер (timeDuration, timeDate) или сообщение
+func CreateExpressionFromIntermediateCatchEvent(event *bpmn.IntermediateCatchEvent, process *bpmn.Process, messages map[string]bpmn.Message) (*model.Expression, error) {
 	if other := bpmn.UnsupportedDefinition(event.OtherDefinitions); other != "" {
-		return nil, fmt.Errorf("intermediate catch event %s: %s не поддерживается, только таймер", event.Id, other)
+		return nil, fmt.Errorf("intermediate catch event %s: %s не поддерживается, только таймер и сообщение", event.Id, other)
 	}
-	if len(event.TimerEventDefinitions) != 1 {
-		return nil, fmt.Errorf("intermediate catch event %s: поддерживается только таймер", event.Id)
+	if len(event.MessageEventDefinitions) == 1 && len(event.TimerEventDefinitions) == 0 {
+		subscription, err := messageSubscription("intermediate catch event "+event.Id, event.MessageEventDefinitions[0].MessageRef, messages)
+		if err != nil {
+			return nil, err
+		}
+		completeType, outgoings, condition := MapOutgoings(&event.OutgoingList, "", process, false)
+		return &model.Expression{
+			ElementId:    event.Id,
+			ActivateType: bpm.ActivateTypeMessage,
+			CompleteType: completeType,
+			NextElements: outgoings,
+			Condition:    condition,
+			Message:      subscription,
+		}, nil
 	}
-	timer, err := timerDuration(event.Id, event.TimerEventDefinitions[0])
+	if len(event.TimerEventDefinitions) != 1 || len(event.MessageEventDefinitions) != 0 {
+		return nil, fmt.Errorf("intermediate catch event %s: нужно одно определение события, таймер или сообщение", event.Id)
+	}
+	timer, date, err := timerSpec(event.Id, event.TimerEventDefinitions[0])
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +137,7 @@ func CreateExpressionFromIntermediateCatchEvent(event *bpmn.IntermediateCatchEve
 		NextElements: outgoings,
 		Condition:    condition,
 		Timer:        timer,
+		TimerDate:    date,
 	}, nil
 }
 
@@ -122,8 +148,9 @@ func addBoundaryEvent(expressions map[string]*model.Expression, event *bpmn.Boun
 	if !found {
 		return fmt.Errorf("boundary event %s: элемент %s не найден", event.Id, event.AttachedToRef)
 	}
-	if task.ActivateType != bpm.ActivateTypeMethod && task.ActivateType != bpm.ActivateTypeQueue {
-		return fmt.Errorf("boundary event %s: граничные события поддерживаются только у task, scriptTask и serviceTask, а %s - нет", event.Id, task.ElementId)
+	userTask := task.ActivateType == bpm.ActivateTypeUserTask
+	if task.ActivateType != bpm.ActivateTypeMethod && task.ActivateType != bpm.ActivateTypeQueue && !userTask {
+		return fmt.Errorf("boundary event %s: граничные события поддерживаются только у task, scriptTask, serviceTask и userTask, а %s - нет", event.Id, task.ElementId)
 	}
 	if !event.Interrupting() {
 		return fmt.Errorf("boundary event %s: непрерывающие события (cancelActivity=false) не поддерживаются", event.Id)
@@ -135,12 +162,13 @@ func addBoundaryEvent(expressions map[string]*model.Expression, event *bpmn.Boun
 	boundary := bpm.Boundary{ElementId: event.Id}
 	switch {
 	case len(event.TimerEventDefinitions) == 1 && len(event.ErrorEventDefinitions) == 0:
-		timer, err := timerDuration(event.Id, event.TimerEventDefinitions[0])
+		timer, date, err := timerSpec(event.Id, event.TimerEventDefinitions[0])
 		if err != nil {
 			return err
 		}
 		boundary.Type = bpm.BoundaryTypeTimer
 		boundary.Timer = timer
+		boundary.TimerDate = date
 	case len(event.ErrorEventDefinitions) == 1 && len(event.TimerEventDefinitions) == 0:
 		boundary.Type = bpm.BoundaryTypeError
 		if ref := event.ErrorEventDefinitions[0].ErrorRef; ref != "" {
@@ -153,6 +181,10 @@ func addBoundaryEvent(expressions map[string]*model.Expression, event *bpmn.Boun
 		}
 	default:
 		return fmt.Errorf("boundary event %s: нужно одно определение события, таймер или ошибка", event.Id)
+	}
+	// задача пользователя не возвращает ошибок: её завершает человек через API
+	if userTask && boundary.Type != bpm.BoundaryTypeTimer {
+		return fmt.Errorf("boundary event %s: у userTask %s поддерживается только граничный таймер", event.Id, task.ElementId)
 	}
 	if err := loopTimerError(event, task, boundary); err != nil {
 		return err
@@ -170,15 +202,39 @@ func addBoundaryEvent(expressions map[string]*model.Expression, event *bpmn.Boun
 	return nil
 }
 
-func timerDuration(eventId string, timer bpmn.TimerEventDefinition) (time.Duration, error) {
-	if timer.TimeDuration == "" {
-		return 0, fmt.Errorf("event %s: поддерживается только таймер с длительностью (timeDuration), без даты и цикла", eventId)
+// timerSpec - длительность (timeDuration) или срок (timeDate) таймера. Срок - дата и время RFC 3339 с зоной
+// или переменная процесса (=name, ${name}) с такой строкой, вычисляется движком при приходе токена (bpm.Boundary.TimerDate).
+// Цикл (timeCycle) не поддерживается
+func timerSpec(eventId string, timer bpmn.TimerEventDefinition) (time.Duration, string, error) {
+	duration, date := strings.TrimSpace(timer.TimeDuration), strings.TrimSpace(timer.TimeDate)
+	switch {
+	case duration != "" && date == "":
+		parsed, err := utils.ParseISODuration(duration)
+		if err != nil {
+			return 0, "", fmt.Errorf("event %s: %w", eventId, err)
+		}
+		return parsed, "", nil
+	case date != "" && duration == "":
+		value, err := timerDate(eventId, date)
+		return 0, value, err
+	default:
+		return 0, "", fmt.Errorf("event %s: поддерживается таймер с длительностью (timeDuration) или датой (timeDate), без цикла", eventId)
 	}
-	duration, err := utils.ParseISODuration(timer.TimeDuration)
-	if err != nil {
-		return 0, fmt.Errorf("event %s: %w", eventId, err)
+}
+
+// timerDate переводит timeDate в форму контракта: дата RFC 3339 как есть, переменная - "${path}"
+func timerDate(eventId, value string) (string, error) {
+	if strings.HasPrefix(value, "=") || strings.HasPrefix(value, "${") || strings.HasPrefix(value, "#{") {
+		variable, err := assignmentValue(eventId, "timeDate", value)
+		if err != nil {
+			return "", fmt.Errorf("event %s: timeDate %q: только дата RFC 3339 или переменная =name, ${name}", eventId, value)
+		}
+		return variable, nil
 	}
-	return duration, nil
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return "", fmt.Errorf("event %s: timeDate %q: нужна дата и время RFC 3339 с зоной, например 2026-12-01T09:00:00+03:00, или переменная =name", eventId, value)
+	}
+	return value, nil
 }
 
 func CreateExpressionFromServiceTask(task *bpmn.ServiceTask, process *bpmn.Process) *model.Expression {

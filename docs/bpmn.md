@@ -43,8 +43,10 @@
 | Service task (`zeebe:taskDefinition`) | ✓ | ваш обработчик, асинхронно через очередь, с повторами |
 | Business rule task (`zeebe:calledDecision`) | ✓ | сгенерированное решение DMN, синхронно |
 | User task | ✓ | ждёт человека, API задач |
-| Intermediate timer catch event | ✓ | ждёт `timeDuration` |
-| Boundary timer event (прерывающий) | ✓ | у task, scriptTask, serviceTask |
+| Receive task (`messageRef`) | ✓ | ждёт сообщение, `POST /api/v1/messages` |
+| Intermediate timer catch event | ✓ | ждёт `timeDuration` или до `timeDate` |
+| Intermediate message catch event | ✓ | ждёт сообщение, как receive task |
+| Boundary timer event (прерывающий) | ✓ | у task, scriptTask, serviceTask, userTask |
 | Boundary error event (прерывающий) | ✓ | у task, scriptTask, serviceTask |
 | Embedded sub-process | ✓ | отдельный дочерний экземпляр |
 | Call activity (`zeebe:calledElement`) | ✓ | экземпляр другого процесса |
@@ -304,17 +306,28 @@ Form.
 </bpmn:intermediateCatchEvent>
 ```
 
-- Только **Duration** в ISO 8601: `PT30S`, `PT5M`, `PT1H30M`, `P1D`, `P1DT2H`. Годы и месяцы (`P1M`) не
+- **Duration** в ISO 8601: `PT30S`, `PT5M`, `PT1H30M`, `P1D`, `P1DT2H`. Годы и месяцы (`P1M`) не
   поддерживаются — их длина непостоянна. Формат Go (`2s`) — ошибка.
-- `timeDate` (в момент времени) и `timeCycle` (повторение) не поддерживаются.
+- **Date** — ждать до момента времени. Дата и время RFC 3339 с зоной (`2026-12-01T09:00:00+03:00`) или переменная
+  процесса с такой строкой (`=dueDate`, `${order.dueDate}`). Срок вычисляется, когда токен приходит в таймер;
+  если он уже прошёл — таймер срабатывает сразу. Переменной нет или в ней не дата — шаг падает, экземпляр станет
+  `failed`, его можно перезапустить с исправленными переменными. Выражения FEEL сложнее переменной не поддерживаются.
+
+  ```xml
+  <bpmn:timerEventDefinition>
+    <bpmn:timeDate xsi:type="bpmn:tFormalExpression">=dueDate</bpmn:timeDate>
+  </bpmn:timerEventDefinition>
+  ```
+- `timeCycle` (повторение) не поддерживается.
 - Таймер — отложенная задача очереди: не занимает воркер, переживает перезапуск сервиса. Точность — около секунды
   (интервал опроса очереди).
 
 ## Граничные события
 
 Событие на краю задачи. Поддерживаются **прерывающие** (`cancelActivity` по умолчанию true) граничные события
-**таймера и ошибки** у **task, scriptTask и serviceTask**. Когда событие срабатывает, задача прерывается
-(в истории — `terminated`), токен идёт по исходящему переходу события.
+**таймера и ошибки** у **task, scriptTask и serviceTask** и **граничный таймер** у **userTask**. Когда событие
+срабатывает, задача прерывается (в истории — `terminated`), токен идёт по исходящему переходу события.
+Таймер — длительность или дата, как у [промежуточного таймера](#таймер).
 
 ### Граничный таймер
 
@@ -324,6 +337,17 @@ Form.
   отбрасывается. Обработчик, который уже выполняется, не прерывается — его результат просто не используется.
 - **Task и scriptTask:** таймер — это `context.WithTimeout` на метод. Сработает, только если метод слушает `ctx`
   (передаёт его в HTTP-клиент, базу, `select` на `ctx.Done()`). Результат метода после дедлайна отбрасывается.
+- **User task** — эскалация по сроку. Если задачу не завершили вовремя, она становится `cancelled`, а токен идёт по
+  событию: например, на задачу руководителю. Завершить её после этого нельзя — API ответит 409. Кто первый сменил
+  статус задачи — человек через `complete` или таймер, — того и ветка: оба не сработают.
+
+  ```xml
+  <bpmn:boundaryEvent id="Overdue" attachedToRef="Approve">
+    <bpmn:timerEventDefinition><bpmn:timeDuration>P3D</bpmn:timeDuration></bpmn:timerEventDefinition>
+  </bpmn:boundaryEvent>
+  ```
+
+  Граничное событие ошибки у user task не поддерживается: задачу завершает человек, ошибок она не возвращает.
 
 ### Граничное событие ошибки
 
@@ -351,6 +375,35 @@ return bpm.NewError("LIMIT_EXCEEDED", "превышен лимит клиент�
 - **Service task:** пойманная `bpm.Error` — переход по событию. Непойманная `bpm.Error` — задача падает сразу, без
   повторов. Обычная ошибка повторяется до `retries`, а после последней попытки её ловит событие **без кода**, если
   оно есть.
+
+## Сообщения
+
+Receive task или промежуточное событие сообщения (Intermediate catch event → Message): токен ждёт, пока сервис
+не передаст сообщение. Так процесс ждёт ответ внешней системы, оплату, подпись — без опроса из service task.
+
+```xml
+<bpmn:receiveTask id="WaitPayment" name="Дождаться оплаты" messageRef="Message_payment" />
+<!-- в definitions, рядом с process -->
+<bpmn:message id="Message_payment" name="paymentReceived">
+  <bpmn:extensionElements>
+    <zeebe:subscription correlationKey="=orderId" />
+  </bpmn:extensionElements>
+</bpmn:message>
+```
+
+- Сообщение находит токен по **имени** (`name` у `bpmn:message`, константа) и **ключу корреляции**.
+- Ключ корреляции — **бизнес-ключ экземпляра**, если `zeebe:subscription` не задан. С `correlationKey="=orderId"`
+  ключ — значение переменной процесса (строка или число), когда токен пришёл в ожидание. Пустой ключ — шаг падает.
+- Передать сообщение — `engine.CorrelateMessage(ctx, name, key, variables)` или
+  [`POST /api/v1/messages`](api.md#сообщения). Переменные сообщения добавляются к переменным процесса. Сообщение
+  получают **все** токены, которые ждут это имя и ключ.
+- **Сообщение раньше ожидания.** Внешняя система часто отвечает раньше, чем токен дойдёт до receive task: запрос
+  ушёл из service task, а ответ пришёл до коммита её шага. С `engine.WithMessageTTL(10*time.Minute)` (`"ttl"` в
+  API) сообщение, которое никто не ждёт, сохраняется и достаётся первому токену, который подпишется в течение ttl.
+  Без ttl такое сообщение — ошибка `ErrMessageNotCorrelated` (404). Просроченные сообщения удаляет
+  [очистка истории](running.md#очистка-истории).
+- `CorrelateMessageTx` передаёт сообщение в транзакции сервиса, как `StartProcessTx` — старт.
+- Граничные события сообщения, старт по сообщению и выражения в имени сообщения не поддерживаются.
 
 ## Подпроцесс
 
@@ -423,8 +476,8 @@ return bpm.NewError("LIMIT_EXCEEDED", "превышен лимит клиент�
 **Элементы:**
 
 - inclusive gateway, event-based gateway, complex gateway;
-- manual task, send task, receive task;
-- промежуточные throw events, message и signal catch events, event sub-process;
+- manual task, send task;
+- промежуточные throw events, signal catch events, event sub-process;
 - подпроцесс внутри подпроцесса, transaction, ad-hoc sub-process;
 - параллельный multi-instance, multi-instance по коллекции, standard loop (см. [multi-instance](#последовательный-multi-instance));
 - несколько start event, start event с таймером, сообщением или сигналом;
@@ -436,9 +489,10 @@ return bpm.NewError("LIMIT_EXCEEDED", "превышен лимит клиент�
 - выход exclusive gateway без условия, который не default flow;
 - `<bpmn:incoming>`/`<bpmn:outgoing>`, которые не совпадают с sequence flow, и sequence flow к несуществующему элементу;
 - непрерывающие граничные события (`cancelActivity="false"`);
-- граничные события у подпроцесса, call activity, user task и business rule task;
+- граничные события у подпроцесса, call activity и business rule task, граничная ошибка у user task;
 - граничные события message, signal, escalation, compensation;
-- таймеры `timeDate` и `timeCycle`, длительность не в ISO 8601 или с годами и месяцами;
+- таймер `timeCycle`, длительность не в ISO 8601 или с годами и месяцами, `timeDate` без зоны или выражением сложнее переменной;
+- сообщение без имени, с выражением в имени или с `correlationKey` сложнее переменной;
 - `errorRef` на несуществующую ошибку;
 - выражения назначения user task сложнее переменной;
 - business rule task с job worker (`zeebe:taskDefinition`) или без `decisionId`/`resultVariable`.

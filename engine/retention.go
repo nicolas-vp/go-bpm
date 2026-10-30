@@ -48,7 +48,7 @@ type RetentionConfig struct {
 }
 
 // Retention удаляет историю экземпляров старше срока хранения: bpm_process_instance, bpm_history, bpm_rules_history,
-// bpm_user_task. Экземпляр удаляется целиком, деревом от корня, когда корень завершён или отменён.
+// bpm_user_task, - и просроченные сообщения bpm_message, которые не дождались подписки. Экземпляр удаляется целиком, деревом от корня, когда корень завершён или отменён.
 // Задачи bpm_queue чистит сама очередь (queue.Options.Retention)
 type Retention struct {
 	db     Querier
@@ -126,6 +126,15 @@ func (r *Retention) DeleteExpired(ctx context.Context) (int, error) {
 	// срок считается по часам базы, как updated_at
 	if err := r.db.QueryRow(ctx, deleteExpiredQuery, r.config.After.Microseconds(), r.config.BatchSize).Scan(&deleted); err != nil {
 		return 0, fmt.Errorf("retention: delete expired: %w", err)
+	}
+	// сообщения, которые не дождались подписки за свой ttl (WithMessageTTL)
+	rows, err := r.db.Query(ctx, deleteExpiredMessagesQuery, r.config.BatchSize)
+	if err != nil {
+		return 0, fmt.Errorf("retention: delete expired messages: %w", err)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("retention: delete expired messages: %w", err)
 	}
 	return deleted, nil
 }

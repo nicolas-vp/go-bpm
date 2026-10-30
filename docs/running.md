@@ -34,6 +34,21 @@ reverse proxy с авторизацией (nginx, Caddy, Traefik). База на
 
 Обновление до нового образа: `docker compose pull && docker compose up -d` — миграции применятся при старте.
 
+### Безопасность поставки
+
+- CI запускает `govulncheck` на последнем патче Go 1.26 (`make vulncheck`): сборка падает, если код вызывает
+  функцию с известной уязвимостью в модуле или стандартной библиотеке.
+- Опубликованный образ несёт аттестации SBOM (состав пакетов) и provenance (как и из какого коммита собран) —
+  `docker buildx imagetools inspect ghcr.io/nicolas-vp/go-bpm:latest --format '{{ json .SBOM }}'`.
+- Образ подписан `cosign` без ключей, через OIDC-токен GitHub Actions; запись подписи — в публичном журнале Rekor.
+  Проверка:
+
+  ```sh
+  cosign verify ghcr.io/nicolas-vp/go-bpm:latest \
+    --certificate-identity-regexp '^https://github.com/nicolas-vp/go-bpm/' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+
 ### Выкладка на сервер из CI
 
 Job `deploy` в `.github/workflows/ci.yml` после публикации образа из `main` заходит на сервер по SSH и вызывает
@@ -135,7 +150,9 @@ err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 | `bpm_rules_history` | вызовы решений DMN | строка на вызов; удаляет `engine.Retention` |
 | `bpm_user_task` | задачи пользователей | строка на каждый приход токена в user task; удаляет `engine.Retention` |
 | `bpm_parallel_sync` | счётчики слияния параллельных веток | временные |
-| `bpm_wait` | гонка service task и граничного таймера | временные |
+| `bpm_wait` | гонка задачи (service task, user task) и её граничного таймера | временные |
+| `bpm_message_subscription` | токены, которые ждут сообщение | временные: удаляются, когда сообщение пришло или экземпляр отменён |
+| `bpm_message` | сообщения, которые ждут подписку (`WithMessageTTL`) | временные: забирает подписка, просроченные удаляет `engine.Retention` |
 | `bpm_schema_migrations` | применённые миграции | |
 
 ### Очистка истории
@@ -162,6 +179,8 @@ defer retention.Stop()
 - Несколько подов чистят одновременно, не мешая друг другу: корни берутся `for update skip locked`.
 - Чистить по своему расписанию (cron, отдельная задача) можно без `Start`: `DeleteExpired(ctx)` удаляет одну пачку
   и возвращает число удалённых корней.
+- Заодно удаляются сообщения `bpm_message`, которые не дождались подписки за свой ttl. Без очистки они остаются
+  в таблице, но подпискам не достаются.
 - Задачи `bpm_queue` чистит очередь, см. `queue.Options.Retention`.
 
 ## Настройки движка
@@ -178,6 +197,7 @@ defer retention.Stop()
 | `TaskWorkers` | 1 | сколько задач **одного jobType** выполняется одновременно в одном экземпляре сервиса |
 | `History` | выключена | история элементов и экземпляры, см. ниже |
 | `RulesHistory` | выключена | история правил DMN |
+| `Hooks` | нет | точки подключения: трассировка, логи, свои метрики, см. ниже |
 | `Logger` | `slog.Default()` | логгер движка |
 
 `queue.Options`:
@@ -194,6 +214,38 @@ jitter) и не превышает 5 минут.
 
 Задачи без задержки будят воркеры сразу через `LISTEN/NOTIFY`, поэтому шаги проходят за миллисекунды. Опрос нужен
 только отложенным задачам: таймер срабатывает с точностью до `PollInterval`.
+
+### Хуки
+
+`engine.Hooks` — функции, которые движок вызывает по ходу процессов. Не заданы — не вызываются.
+
+| Хук | Когда | Для чего |
+|---|---|---|
+| `OnElement(ctx, HistoryRecord)` | событие элемента: `activated`, `completed`, `terminated` — те же, что в истории, но независимо от `History` | свой журнал, уведомления, события в шину |
+| `WrapCall(ctx, Call, next)` | вокруг вызова кода сервиса: метода task, scriptTask, businessRuleTask и обработчика service task | span OpenTelemetry, логи с контекстом, время вызовов. Должен вызвать `next` и вернуть его ошибку |
+| `OnInstanceFailed(ctx, InstanceFailure)` | у задачи кончились попытки, экземпляр стал `failed` | алерт, тикет в поддержку |
+
+```go
+tracer := otel.Tracer("bpm")
+engine.Config{Hooks: engine.Hooks{
+	WrapCall: func(ctx context.Context, call engine.Call, next func(context.Context) error) error {
+		ctx, span := tracer.Start(ctx, call.ProcessName+"/"+call.ElementId)
+		defer span.End()
+		span.SetAttributes(attribute.String("bpm.instance", call.InstanceUid.String()), attribute.Int("bpm.attempt", call.Attempt))
+		err := next(ctx)
+		if err != nil {
+			span.RecordError(err)
+		}
+		return err
+	},
+}}
+```
+
+- Хуки вызываются синхронно, в воркере очереди: долгий хук задерживает шаг.
+- `OnElement` и `OnInstanceFailed` вызываются в транзакции шага. Если шаг откатится и повторится, событие придёт ещё
+  раз. Для уведомлений, которые нельзя задвоить, пишите в свою таблицу через ту же базу или делайте их идемпотентными.
+- `Call.Attempt` — номер попытки задачи очереди. Метод выполняется в шаге предыдущей задачи (например, service task
+  перед ним), и его попытки — попытки этой задачи. По `Attempt`, `LastAttempt` и ошибке `next` видны повторы.
 
 ### История
 
@@ -404,6 +456,7 @@ commit;
 make test       # всё, включая интеграционные тесты на Postgres из GO_BPM_TEST_DSN — база очищается!
 make test-unit  # без базы: интеграционные тесты пропускаются
 make lint       # go vet и gofmt
+make vulncheck  # govulncheck: известные уязвимости в вызываемом коде модулей и стандартной библиотеки
 make generate   # перегенерировать демо после правки шаблонов генератора
 ```
 

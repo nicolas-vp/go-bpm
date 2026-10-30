@@ -41,12 +41,25 @@ type Expression struct {
 	PropagateChildVariables bool
 	// Timer - для ActivateTypeTimer: через сколько после прихода токена идти дальше
 	Timer time.Duration
+	// TimerDate - для ActivateTypeTimer вместо Timer: когда идти дальше (timeDate), см. TimerDate у Boundary
+	TimerDate string
 	// Boundaries - прерывающие граничные события task, scriptTask и service task
 	Boundaries []Boundary
 	// UserTask - для ActivateTypeUserTask: кому назначается задача
 	UserTask *UserTask
 	// Loop - последовательный multi-instance: элемент выполняется несколько раз подряд, nil - один раз
 	Loop *Loop
+	// Message - для ActivateTypeMessage: какое сообщение ждёт элемент
+	Message *Message
+}
+
+// Message - подписка элемента на сообщение: токен ждёт сообщение с именем Name и ключом корреляции
+type Message struct {
+	// Name - имя сообщения (name у bpmn:message)
+	Name string
+	// CorrelationKey - ключ корреляции: переменная "${path}" (zeebe:subscription correlationKey) или значение как есть.
+	// Пусто - бизнес-ключ экземпляра
+	CorrelationKey string
 }
 
 // LoopCounterVariable - переменная с номером выполнения элемента в цикле, с 1, как loopCounter в Zeebe.

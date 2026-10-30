@@ -142,6 +142,7 @@ func (s *Engine) systemTaskFailed(ctx context.Context, tx queue.Tx, task *queue.
 	if err := json.Unmarshal(task.Payload, &st); err != nil || st.Message == nil {
 		return nil
 	}
+	s.instanceFailed(ctx, task, st.Message)
 	return s.failInstance(ctx, tx, st.Message)
 }
 
@@ -151,6 +152,7 @@ func (s *Engine) serviceTaskFailed(ctx context.Context, tx queue.Tx, task *queue
 	if err := json.Unmarshal(task.Payload, &message); err != nil {
 		return nil
 	}
+	s.instanceFailed(ctx, task, &message)
 	return s.failInstance(ctx, tx, &message)
 }
 

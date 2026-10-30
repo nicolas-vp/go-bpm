@@ -421,6 +421,7 @@ func (q *Queue) failWithCallback(ctx context.Context, k *kind, task *Task, cause
 			return err
 		}
 		defer recoverPanic(&err)
+		task.Err = cause
 		return k.opts.OnFailed(ctx, tx, task)
 	})
 }

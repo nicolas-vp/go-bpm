@@ -59,7 +59,7 @@ func GenerateQueue(definitions []bpmn.Definitions, decisions map[string]Decision
 		for _, process := range definition.Processes {
 			var processes []model.DeploymentProcess
 
-			expressions, err := ParseFromProcess(&process, &allQueues, definition.ErrorCodes())
+			expressions, err := ParseFromProcess(&process, &allQueues, &definition)
 			if err != nil {
 				return fmt.Errorf("process %s: %w", process.Id, err)
 			}
@@ -71,7 +71,7 @@ func GenerateQueue(definitions []bpmn.Definitions, decisions map[string]Decision
 
 			for _, subProcess := range process.SubProcessList {
 				subProcess.Id = process.Id + "." + subProcess.Id
-				expressions, err := ParseFromProcess(&subProcess, &allQueues, definition.ErrorCodes())
+				expressions, err := ParseFromProcess(&subProcess, &allQueues, &definition)
 				if err != nil {
 					return fmt.Errorf("process %s: %w", subProcess.Id, err)
 				}

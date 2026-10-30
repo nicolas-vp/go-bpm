@@ -49,8 +49,9 @@ func TestEndToEnd(t *testing.T) {
 	}
 	instances := make(map[string]uuid.UUID)
 	for name := range processes {
-		// задачи пользователей сами не завершатся, эти процессы проходят TestUserTasks и TestMultiInstance
-		if name == "TestUserTask" || name == "TestMultiInstance" {
+		// задачи пользователей и сообщения сами не придут: эти процессы проходят TestUserTasks, TestMultiInstance
+		// и TestDemoMessage
+		if name == "TestUserTask" || name == "TestMultiInstance" || name == "TestMessage" {
 			continue
 		}
 		id, err := e.StartProcess(ctx, name, variables[name], engine.WithBusinessKey("key-"+name))

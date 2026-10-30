@@ -28,24 +28,24 @@ func (s *Engine) handleSystemTask(ctx context.Context, task *queue.Task) error {
 
 	switch st.Type {
 	case systemStart:
-		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+		task.OnSucceeded(stepCallback(task, func(ctx context.Context, tx queue.Tx) error {
 			return s.startRoot(ctx, tx, st.Message)
-		})
+		}))
 		return nil
 	case systemTimer:
-		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+		task.OnSucceeded(stepCallback(task, func(ctx context.Context, tx queue.Tx) error {
 			return s.fireTimer(ctx, tx, st.Message, st.Boundary)
-		})
+		}))
 		return nil
 	case systemLoop:
-		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+		task.OnSucceeded(stepCallback(task, func(ctx context.Context, tx queue.Tx) error {
 			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveActivate)
-		})
+		}))
 		return nil
-	case systemUserTask:
-		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+	case systemUserTask, systemMessage:
+		task.OnSucceeded(stepCallback(task, func(ctx context.Context, tx queue.Tx) error {
 			return s.moveNext(ctx, tx, st.Message, st.Message.CurrentPosition, moveComplete)
-		})
+		}))
 		return nil
 	default:
 		return fmt.Errorf("%w: unknown system task type %q", queue.ErrCancel, st.Type)
@@ -66,18 +66,21 @@ func (s *Engine) serviceTaskHandler(taskType string, handler bpm.HandlerFunc) qu
 		if err := json.Unmarshal(task.Payload, &message); err != nil {
 			return fmt.Errorf("%w: unmarshal message: %v", queue.ErrCancel, err)
 		}
-		if err := runHandler(ctx, handler, taskType, &message, task.IsLastAttempt()); err != nil {
+		err := s.callService(withAttempt(ctx, task), &message, message.CurrentPosition, taskType, func(ctx context.Context) error {
+			return runHandler(ctx, handler, taskType, &message, task.IsLastAttempt())
+		})
+		if err != nil {
 			step, err := s.taskErrorStep(ctx, task.IsLastAttempt(), taskType, &message, err)
 			if err != nil {
 				return err
 			}
-			task.OnSucceeded(step)
+			task.OnSucceeded(stepCallback(task, step))
 			return nil
 		}
 
-		task.OnSucceeded(func(ctx context.Context, tx queue.Tx) error {
+		task.OnSucceeded(stepCallback(task, func(ctx context.Context, tx queue.Tx) error {
 			return s.moveNext(ctx, tx, &message, message.CurrentPosition, moveComplete)
-		})
+		}))
 		return nil
 	}
 }

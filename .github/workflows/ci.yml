@@ -20,10 +20,15 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      # последний патч 1.26, как golang:1.26-alpine в Dockerfile: go.mod задаёт только минимальную версию,
+      # а уязвимости стандартной библиотеки исправляются патчами
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.26.x"
+          check-latest: true
       - run: make lint
+      # уязвимости в коде, который действительно вызывается: модули и стандартная библиотека
+      - run: make vulncheck
       # сгенерированный код демо должен совпадать с BPMN
       - run: make generate && git diff --exit-code
       - run: make test
@@ -37,6 +42,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # id-token - подпись образа cosign без ключей (OIDC-токен GitHub)
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -56,15 +63,29 @@ jobs:
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/build-push-action@v6
+      # SBOM и provenance публикуются в ghcr.io вместе с образом, как аттестации
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # подпись по digest: подпись и сертификат - в ghcr.io рядом с образом, запись - в публичном журнале Rekor.
+      # Проверка: cosign verify ghcr.io/<владелец>/go-bpm:<тег>
+      #   --certificate-identity-regexp 'https://github.com/<владелец>/go-bpm/' --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - uses: sigstore/cosign-installer@v3
+        if: github.event_name != 'pull_request'
+      - name: sign
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY}@${DIGEST}"
 
   # выкладка на сервер из main: deploy/deploy.sh на сервере пересоздаёт приложение из нового образа, база остаётся.
   # Секреты: DEPLOY_HOST, DEPLOY_SSH_KEY (ключ, которому на сервере разрешён только deploy.sh), DEPLOY_KNOWN_HOSTS

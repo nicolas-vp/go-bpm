@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,10 +45,41 @@ func (s *Engine) pushTimer(ctx context.Context, tx queue.Tx, message *instanceMe
 	return s.queue.PushTx(ctx, tx, task, queue.WithDelay(delay))
 }
 
+// timerDelay - через сколько срабатывает таймер eventId: длительность или срок date (bpm.Boundary.TimerDate).
+// Срок вычисляется, когда токен приходит в элемент; уже прошедший - таймер срабатывает сразу.
+// Переменной нет или в ней не дата - ошибка шага: очередь его повторит, а после попыток экземпляр упадёт
+func timerDelay(message *instanceMessage, eventId string, duration time.Duration, date string) (time.Duration, error) {
+	if date == "" {
+		return duration, nil
+	}
+	value := date
+	if path, isVariable := strings.CutPrefix(date, "${"); isVariable && strings.HasSuffix(path, "}") {
+		path = strings.TrimSuffix(path, "}")
+		resolved, found := lookupVariable(message.Variables, path)
+		if !found {
+			return 0, fmt.Errorf("process %q: timer %q: variable %q not found", message.ProcessName, eventId, path)
+		}
+		text, isString := resolved.(string)
+		if !isString {
+			return 0, fmt.Errorf("process %q: timer %q: variable %q: date string expected, got %T", message.ProcessName, eventId, path, resolved)
+		}
+		value = text
+	}
+	at, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return 0, fmt.Errorf("process %q: timer %q: date %q: %w", message.ProcessName, eventId, value, err)
+	}
+	return max(time.Until(at), 0), nil
+}
+
 // activateTimer - токен пришёл в промежуточный таймер: ставим отложенную задачу, дальше пойдёт fireTimer
 func (s *Engine) activateTimer(ctx context.Context, tx queue.Tx, message *instanceMessage, expression *bpm.Expression) error {
 	message.CurrentPosition = expression.ElementId
-	if err := s.pushTimer(ctx, tx, message, "", expression.Timer, ""); err != nil {
+	delay, err := timerDelay(message, expression.ElementId, expression.Timer, expression.TimerDate)
+	if err != nil {
+		return err
+	}
+	if err := s.pushTimer(ctx, tx, message, "", delay, ""); err != nil {
 		return err
 	}
 	return s.logHistory(ctx, tx, HistoryActivated, message, expression)
@@ -63,14 +95,21 @@ func (s *Engine) fireTimer(ctx context.Context, tx queue.Tx, message *instanceMe
 		return err
 	}
 	for _, boundary := range task.Timers() {
-		if boundary.ElementId == boundaryId {
-			return s.leaveByBoundary(ctx, tx, message, task, &boundary, nil)
+		if boundary.ElementId != boundaryId {
+			continue
 		}
+		if task.ActivateType == bpm.ActivateTypeUserTask {
+			terminated, err := s.terminateUserTask(ctx, tx, message)
+			if err != nil || !terminated {
+				return err
+			}
+		}
+		return s.leaveByBoundary(ctx, tx, message, task, &boundary, nil)
 	}
 	return fmt.Errorf("process %q: element %q has no timer %q", message.ProcessName, task.ElementId, boundaryId)
 }
 
-// startWait вызывается при активации service task с граничными таймерами: вставляет строку bpm_wait
+// startWait вызывается при активации service task и задачи пользователя с граничными таймерами: вставляет строку bpm_wait
 // и ставит таймеры. Возвращает ключ, с которым ставится сама задача, чтобы таймер мог её отменить
 func (s *Engine) startWait(ctx context.Context, tx queue.Tx, message *instanceMessage, expression *bpm.Expression) (string, error) {
 	timers := expression.Timers()
@@ -83,7 +122,11 @@ func (s *Engine) startWait(ctx context.Context, tx queue.Tx, message *instanceMe
 	}
 	message.WaitId = waitId
 	for _, timer := range timers {
-		if err := s.pushTimer(ctx, tx, message, timer.ElementId, timer.Timer, timerKey(waitId, timer.ElementId)); err != nil {
+		delay, err := timerDelay(message, timer.ElementId, timer.Timer, timer.TimerDate)
+		if err != nil {
+			return "", err
+		}
+		if err := s.pushTimer(ctx, tx, message, timer.ElementId, delay, timerKey(waitId, timer.ElementId)); err != nil {
 			return "", err
 		}
 	}
@@ -176,21 +219,30 @@ func errorBoundary(expression *bpm.Expression, err error, technical bool) *bpm.B
 func (s *Engine) activateMethod(ctx context.Context, tx queue.Tx, message *instanceMessage, expression *bpm.Expression) error {
 	decisions := &decisionRecorder{}
 	methodCtx := bpm.WithDecisionRecorder(ctx, decisions.record)
-	var timer *bpm.Boundary
-	if timers := expression.Timers(); len(timers) > 0 {
-		timer = &timers[0]
-		for i := range timers {
-			if timers[i].Timer < timer.Timer {
-				timer = &timers[i]
-			}
+	// timer - граничный таймер, который сработает первым
+	var (
+		timer      *bpm.Boundary
+		firstDelay time.Duration
+	)
+	for _, boundary := range expression.Timers() {
+		delay, err := timerDelay(message, boundary.ElementId, boundary.Timer, boundary.TimerDate)
+		if err != nil {
+			return err
 		}
+		if timer == nil || delay < firstDelay {
+			timer, firstDelay = &boundary, delay
+		}
+	}
+	if timer != nil {
 		var cancel context.CancelFunc
-		methodCtx, cancel = context.WithTimeout(methodCtx, timer.Timer)
+		methodCtx, cancel = context.WithTimeout(methodCtx, firstDelay)
 		defer cancel()
 	}
 
 	variables := message.Variables
-	err := runMethod(methodCtx, message, expression)
+	err := s.callService(methodCtx, message, expression.ElementId, "", func(ctx context.Context) error {
+		return runMethod(ctx, message, expression)
+	})
 	// таймер сработал раньше, чем метод вернулся: результат метода не нужен, даже если он успешный
 	if timer != nil && errors.Is(methodCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 		message.Variables = variables

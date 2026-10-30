@@ -41,6 +41,9 @@ func activityLoops(process *bpmn.Process) map[string]*bpmn.MultiInstance {
 	for _, task := range process.UserTasks {
 		add(task.Id, task.MultiInstance)
 	}
+	for _, task := range process.ReceiveTasks {
+		add(task.Id, task.MultiInstance)
+	}
 	for _, callActivity := range process.CallActivityList {
 		add(callActivity.Id, callActivity.MultiInstance)
 	}

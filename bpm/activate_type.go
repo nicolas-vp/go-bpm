@@ -21,6 +21,9 @@ const (
 	ActivateTypeBoundary ActivateType = 9
 	// ActivateTypeUserTask - задача пользователя: движок создаёт её в bpm_user_task и ждёт, пока её завершат через API
 	ActivateTypeUserTask ActivateType = 10
+	// ActivateTypeMessage - receive task или промежуточное событие сообщения: движок подписывает токен
+	// на сообщение Expression.Message и ждёт, пока его не передадут через Engine.CorrelateMessage
+	ActivateTypeMessage ActivateType = 11
 )
 
 var activateTypeNames = map[ActivateType]string{
@@ -35,6 +38,7 @@ var activateTypeNames = map[ActivateType]string{
 	ActivateTypeTimer:           "Timer",
 	ActivateTypeBoundary:        "Boundary",
 	ActivateTypeUserTask:        "UserTask",
+	ActivateTypeMessage:         "Message",
 }
 
 // String - имя без префикса: ActivateTypeQueue -> "Queue"
