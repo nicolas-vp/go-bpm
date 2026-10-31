@@ -491,8 +491,10 @@ func TestGeneratedQueuesHaveHandlers(t *testing.T) {
 	if _, err := New(&fakeQueue{}, Config{}, generatedProcesses, bpmgen.Queues(&services.Services{})); err != nil {
 		t.Fatal(err)
 	}
+	aiTypes := aiTaskTypes(generatedProcesses["TestAiTask"].Flows)
 	for _, queue := range bpmgen.Queues(&services.Services{}) {
-		if queue.Handler == nil {
+		// AI task выполняет движок, обработчика у её jobType нет
+		if queue.Handler == nil && !aiTypes[queue.TypeID] {
 			t.Errorf("task type %q: generated queue has no handler", queue.TypeID)
 		}
 	}

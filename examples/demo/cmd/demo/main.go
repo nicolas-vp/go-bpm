@@ -20,6 +20,10 @@
 //	curl -XPOST localhost:8080/api/v1/processes/TestMessage/instances -d '{"businessKey":"order-1"}'
 //	curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correlationKey":"order-1","variables":{"paid":true}}'
 //
+// AI task: TestAiTask разбирает обращение; модель в демо - заглушка aistub, в сервисе - своя реализация engine.AIClient
+//
+//	curl -XPOST localhost:8080/api/v1/processes/TestAiTask/instances -d '{"variables":{"request":"Списали деньги дважды"}}'
+//
 // Метрики Prometheus:
 //
 //	curl localhost:8080/metrics
@@ -42,6 +46,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/nicolas-vp/go-bpm/engine"
+	"github.com/nicolas-vp/go-bpm/examples/demo/aistub"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
 	"github.com/nicolas-vp/go-bpm/httpapi"
@@ -107,7 +112,9 @@ func run(ctx context.Context, log *slog.Logger, dsn, addr, kindPrefix string, sk
 		KindPrefix:   kindPrefix,
 		History:      history,
 		RulesHistory: rulesHistory,
-		Logger:       log,
+		// модель AI task: в демо - заглушка, в сервисе - своя реализация engine.AIClient
+		AI:     aistub.Client{},
+		Logger: log,
 	}, processes, bpmgen.Queues(svc))
 	if err != nil {
 		return err

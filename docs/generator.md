@@ -70,7 +70,7 @@ internal/bpmgen/
   queue-gen.go                     ⚙ Queues(svc): jobType всех процессов и их обработчики
   model/data_model.go              ✎ DataModel — переменные процессов
   services/services.go             ✎ Services — зависимости методов и обработчиков
-  handlers/<job_type>.go           ✎ обработчик service task, один на jobType
+  handlers/<job_type>.go           ✎ обработчик service task, один на jobType (у AI task его нет)
   <процесс>/                       пакет процесса, имя — id процесса в snake_case
     flow-gen.go                    ⚙ Deployment(svc): схема процесса и его подпроцессов
     cond_<id шлюза>.go             ⚙ условие exclusive gateway

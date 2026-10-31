@@ -23,45 +23,45 @@ type UserTask struct {
 	Other []Element `xml:",any"`
 }
 
-// AssignmentDefinition - zeebe:assignmentDefinition задачи пользователя
+// AssignmentDefinition - gobpm:assignmentDefinition или zeebe:assignmentDefinition задачи пользователя
 type AssignmentDefinition struct {
-	Assignee        string `xml:"assignee,attr"`
-	CandidateUsers  string `xml:"candidateUsers,attr"`
-	CandidateGroups string `xml:"candidateGroups,attr"`
+	XMLName         xml.Name `xml:"assignmentDefinition"`
+	Assignee        string   `xml:"assignee,attr"`
+	CandidateUsers  string   `xml:"candidateUsers,attr"`
+	CandidateGroups string   `xml:"candidateGroups,attr"`
 }
 
-// FormDefinition - zeebe:formDefinition: встроенная форма (formKey) или связанная (formId)
+func (d AssignmentDefinition) xmlName() xml.Name { return d.XMLName }
+
+// FormDefinition - gobpm:formDefinition или zeebe:formDefinition: встроенная форма (formKey) или связанная (formId)
 type FormDefinition struct {
-	FormKey string `xml:"formKey,attr"`
-	FormId  string `xml:"formId,attr"`
+	XMLName xml.Name `xml:"formDefinition"`
+	FormKey string   `xml:"formKey,attr"`
+	FormId  string   `xml:"formId,attr"`
 }
 
-// GetAssignment возвращает назначение задачи: атрибуты Camunda 7, а если их нет - zeebe:assignmentDefinition
+func (d FormDefinition) xmlName() xml.Name { return d.XMLName }
+
+// GetAssignment возвращает назначение задачи: атрибуты Camunda 7, а если их нет - gobpm:assignmentDefinition
+// или zeebe:assignmentDefinition
 func (task *UserTask) GetAssignment() AssignmentDefinition {
 	assignment := AssignmentDefinition{Assignee: task.Assignee, CandidateUsers: task.CandidateUsers, CandidateGroups: task.CandidateGroups}
 	if assignment != (AssignmentDefinition{}) {
 		return assignment
 	}
-	for _, e := range task.ExtensionElementList {
-		for _, d := range e.AssignmentDefinitions {
-			return d
-		}
-	}
-	return assignment
+	definition, _ := pickExtension(collectExtensions(task.ExtensionElementList, func(e ExtensionElements) []AssignmentDefinition { return e.AssignmentDefinitions }))
+	definition.XMLName = xml.Name{}
+	return definition
 }
 
-// GetFormKey возвращает camunda:formKey или ключ формы zeebe:formDefinition
+// GetFormKey возвращает camunda:formKey или ключ формы gobpm:formDefinition, zeebe:formDefinition
 func (task *UserTask) GetFormKey() string {
 	if task.FormKey != "" {
 		return task.FormKey
 	}
-	for _, e := range task.ExtensionElementList {
-		for _, d := range e.FormDefinitions {
-			if d.FormKey != "" {
-				return d.FormKey
-			}
-			return d.FormId
-		}
+	form, _ := pickExtension(collectExtensions(task.ExtensionElementList, func(e ExtensionElements) []FormDefinition { return e.FormDefinitions }))
+	if form.FormKey != "" {
+		return form.FormKey
 	}
-	return ""
+	return form.FormId
 }

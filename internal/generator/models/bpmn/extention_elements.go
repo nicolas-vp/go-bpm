@@ -11,4 +11,6 @@ type ExtensionElements struct {
 	// AssignmentDefinitions, FormDefinitions - назначение и форма задачи пользователя в Zeebe
 	AssignmentDefinitions []AssignmentDefinition `xml:"assignmentDefinition"`
 	FormDefinitions       []FormDefinition       `xml:"formDefinition"`
+	// AiTasks - gobpm:aiTask: метка AI task у service task с настройками запроса к модели
+	AiTasks []AiTask `xml:"aiTask"`
 }

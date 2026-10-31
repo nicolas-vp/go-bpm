@@ -21,10 +21,15 @@ func ParseFromProcess(process *bpmn.Process, queues *[]model.Queue, definition *
 	errorCodes, messages := definition.ErrorCodes(), definition.MessagesById()
 	expressions := make(map[string]*model.Expression)
 	for _, task := range process.ServiceTasks {
-		expressions[task.Id] = CreateExpressionFromServiceTask(&task, process)
+		expression, err := CreateExpressionFromServiceTask(&task, process)
+		if err != nil {
+			return nil, err
+		}
+		expressions[task.Id] = expression
 		*queues = append(*queues, model.Queue{
-			TypeID:  task.GetType(),
+			TypeID:  expression.TaskType,
 			Retries: task.GetRetries(),
+			AI:      expression.AITask != nil,
 		})
 	}
 	for _, task := range process.Tasks {
@@ -237,16 +242,33 @@ func timerDate(eventId, value string) (string, error) {
 	return value, nil
 }
 
-func CreateExpressionFromServiceTask(task *bpmn.ServiceTask, process *bpmn.Process) *model.Expression {
+// CreateExpressionFromServiceTask - service task: задача очереди jobType, выполняется асинхронно обработчиком
+// из handlers/. AI task (gobpm:aiTask) - тоже задача очереди, но её выполняет движок запросом к модели
+func CreateExpressionFromServiceTask(task *bpmn.ServiceTask, process *bpmn.Process) (*model.Expression, error) {
+	jobType := strings.TrimSpace(task.GetType())
+	var aiTask *bpm.AITask
+	if ai, ok := task.GetAiTask(); ok {
+		var err error
+		if aiTask, err = createAiTask(task.Id, ai); err != nil {
+			return nil, err
+		}
+		if jobType == "" {
+			jobType = DefaultAiJobType
+		}
+	}
+	if jobType == "" {
+		return nil, fmt.Errorf("service task %s: не задан тип задачи (gobpm:taskDefinition или zeebe:taskDefinition type)", task.Id)
+	}
 	completeType, outgoings, condition := MapOutgoings(&task.OutgoingList, task.Default, process, false)
 	return &model.Expression{
 		ElementId:    task.Id,
 		ActivateType: bpm.ActivateTypeQueue,
 		CompleteType: completeType,
-		TaskType:     task.GetType(),
+		TaskType:     jobType,
 		NextElements: outgoings,
 		Condition:    condition,
-	}
+		AITask:       aiTask,
+	}, nil
 }
 
 // CreateExpressionFromTask - обычная задача, выполняется синхронно методом из methods/
@@ -369,7 +391,7 @@ func CreateExpressionFromSubProcess(subProcess *bpmn.Process, process *bpmn.Proc
 // CreateExpressionFromCallActivity - callActivity запускает отдельный экземпляр процесса и ждёт его завершения
 func CreateExpressionFromCallActivity(callActivity *bpmn.CallActivity, process *bpmn.Process) *model.Expression {
 	completeType, outgoings, condition := MapOutgoings(&callActivity.OutgoingList, "", process, true)
-	calledElement := getCalledElement(callActivity)
+	calledElement := callActivity.GetCalledElement()
 	return &model.Expression{
 		ElementId:               callActivity.Id,
 		ActivateType:            bpm.ActivateTypeCallActivity,
@@ -379,15 +401,6 @@ func CreateExpressionFromCallActivity(callActivity *bpmn.CallActivity, process *
 		ProcessId:               calledElement.ProcessId,
 		PropagateChildVariables: calledElement.PropagateChildVariables(),
 	}
-}
-
-func getCalledElement(callActivity *bpmn.CallActivity) bpmn.CalledElement {
-	for _, element := range callActivity.ExtensionElementList {
-		for _, ext := range element.CalledElements {
-			return ext
-		}
-	}
-	return bpmn.CalledElement{}
 }
 
 func MapOutgoingElementsSequenceFlow(s *bpmn.SequenceFlow) []string {

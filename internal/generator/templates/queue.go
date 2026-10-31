@@ -8,20 +8,22 @@ package {{ .Package }}
 import (
 	"` + ModelImport + `"
 	"{{ .ServicesImport }}"
-{{- if .Queues }}
+{{- if .HasHandlers }}
 	"{{ .HandlersImport }}"
 {{- end }}
 )
 
 // Queues - виды задач очереди по jobType всех процессов; jobType может встречаться в нескольких процессах.
-// Обработчики получают сервисы svc
+// Обработчики получают сервисы svc. У AI task обработчика нет: её выполняет движок через engine.Config.AI
 func Queues(svc *services.Services) []bpm.Queue {
 	return []bpm.Queue{
 {{- range .Queues }}
 	{
 		TypeID:  "{{ .TypeID }}",
 		Retries: {{ .Retries }},
+		{{- if .HandlerFunc }}
 		Handler: bpm.Handler(svc, handlers.{{ .HandlerFunc }}),
+		{{- end }}
 	},
 {{- end }}
 	}

@@ -10,10 +10,13 @@ type Message struct {
 	Subscriptions []Subscription `xml:"extensionElements>subscription"`
 }
 
-// Subscription - zeebe:subscription: correlationKey - выражение ключа корреляции
+// Subscription - gobpm:subscription или zeebe:subscription: correlationKey - выражение ключа корреляции
 type Subscription struct {
-	CorrelationKey string `xml:"correlationKey,attr"`
+	XMLName        xml.Name `xml:"subscription"`
+	CorrelationKey string   `xml:"correlationKey,attr"`
 }
+
+func (s Subscription) xmlName() xml.Name { return s.XMLName }
 
 // MessageEventDefinition - событие сообщения, MessageRef ссылается на bpmn:message в definitions
 type MessageEventDefinition struct {
@@ -21,10 +24,8 @@ type MessageEventDefinition struct {
 	MessageRef string   `xml:"messageRef,attr"`
 }
 
-// CorrelationKey - zeebe:subscription correlationKey сообщения, пусто - не задан
+// CorrelationKey - correlationKey gobpm:subscription, без него - zeebe:subscription; пусто - не задан
 func (m *Message) CorrelationKey() string {
-	for _, subscription := range m.Subscriptions {
-		return subscription.CorrelationKey
-	}
-	return ""
+	subscription, _ := pickExtension(m.Subscriptions)
+	return subscription.CorrelationKey
 }

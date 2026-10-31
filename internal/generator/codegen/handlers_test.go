@@ -11,17 +11,30 @@ import (
 
 func TestMergeQueues(t *testing.T) {
 	// doSomeAsync - в двух процессах (или дважды в одном)
-	queues := mergeQueues([]model.Queue{
+	// ai - AI task: обработчика нет
+	queues, err := mergeQueues([]model.Queue{
 		{TypeID: "payment.charge", Retries: 3},
 		{TypeID: "doSomeAsync", Retries: 1},
 		{TypeID: "doSomeAsync", Retries: 5},
+		{TypeID: "ai", Retries: 2, AI: true},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []model.Queue{
+		{TypeID: "ai", Retries: 2, AI: true},
 		{TypeID: "doSomeAsync", Retries: 5, HandlerFunc: "DoSomeAsync"},
 		{TypeID: "payment.charge", Retries: 3, HandlerFunc: "PaymentCharge"},
 	}
-	if len(queues) != len(want) || queues[0] != want[0] || queues[1] != want[1] {
+	if len(queues) != len(want) || queues[0] != want[0] || queues[1] != want[1] || queues[2] != want[2] {
 		t.Errorf("queues = %v, want %v", queues, want)
+	}
+}
+
+func TestMergeQueuesAiConflict(t *testing.T) {
+	_, err := mergeQueues([]model.Queue{{TypeID: "ai", AI: true}, {TypeID: "ai"}})
+	if err == nil || !strings.Contains(err.Error(), "и у AI task, и у service task") {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -36,7 +49,11 @@ func TestPrepareHandlerFiles(t *testing.T) {
 	}
 
 	imports := dataImports{DataModelImport: "example.com/svc/gen/model", ServicesImport: "example.com/svc/gen/services"}
-	if err := prepareHandlerFiles(mergeQueues([]model.Queue{{TypeID: "doSomeAsync"}, {TypeID: "makeSmev"}}), outputPath, imports); err != nil {
+	queues, err := mergeQueues([]model.Queue{{TypeID: "doSomeAsync"}, {TypeID: "makeSmev"}, {TypeID: "ai", AI: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareHandlerFiles(queues, outputPath, imports); err != nil {
 		t.Fatal(err)
 	}
 	stub, err := os.ReadFile(filepath.Join(outputPath, handlersDir, "do_some_async.go"))
@@ -56,8 +73,15 @@ func TestPrepareHandlerFiles(t *testing.T) {
 	if content, _ := os.ReadFile(handwritten); string(content) != "package handlers\n\n// руками\n" {
 		t.Errorf("рукописный обработчик перезаписан:\n%s", content)
 	}
+	if _, err := os.Stat(filepath.Join(outputPath, handlersDir, "ai.go")); !os.IsNotExist(err) {
+		t.Errorf("у AI task не должно быть заглушки обработчика: %v", err)
+	}
 
-	err = prepareHandlerFiles(mergeQueues([]model.Queue{{TypeID: "make-smev"}, {TypeID: "makeSmev"}}), outputPath, imports)
+	collision, err := mergeQueues([]model.Queue{{TypeID: "make-smev"}, {TypeID: "makeSmev"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = prepareHandlerFiles(collision, outputPath, imports)
 	if err == nil || !strings.Contains(err.Error(), "одно имя") {
 		t.Errorf("collision: err = %v", err)
 	}

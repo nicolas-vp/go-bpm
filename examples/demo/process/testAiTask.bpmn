@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:gobpm="https://github.com/nicolas-vp/go-bpm/schema/1.0" id="Definitions_ai" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="TestAiTask" name="Разбор обращения клиента" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Classify" name="Определить категорию">
+      <bpmn:extensionElements>
+        <gobpm:taskDefinition type="ai" retries="3" />
+        <gobpm:aiTask systemPrompt="Ты классифицируешь обращения клиентов банка. Ответь одним словом: billing, login или other." prompt="Обращение: ${request}" resultVariable="category" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_start</bpmn:incoming>
+      <bpmn:outgoing>Flow_classified</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Triage" name="Оценить срочность">
+      <bpmn:extensionElements>
+        <gobpm:taskDefinition type="ai" retries="3" />
+        <gobpm:aiTask systemPrompt="Оцени срочность обращения. Ответь JSON: {&#34;urgent&#34;: true или false, &#34;reason&#34;: &#34;почему&#34;}." prompt="=request" resultVariable="triage" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_classified</bpmn:incoming>
+      <bpmn:outgoing>Flow_triaged</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="EndEvent_1">
+      <bpmn:incoming>Flow_triaged</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_refused" name="Модель отказалась">
+      <bpmn:incoming>Flow_refused</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:boundaryEvent id="Refused" name="Отказ модели" attachedToRef="Classify">
+      <bpmn:outgoing>Flow_refused</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="Error_refusal" />
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="Flow_start" sourceRef="StartEvent_1" targetRef="Classify" />
+    <bpmn:sequenceFlow id="Flow_classified" sourceRef="Classify" targetRef="Triage" />
+    <bpmn:sequenceFlow id="Flow_triaged" sourceRef="Triage" targetRef="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_refused" sourceRef="Refused" targetRef="EndEvent_refused" />
+  </bpmn:process>
+  <!-- bpm.Error, которой реализация engine.AIClient может сообщить об отказе модели -->
+  <bpmn:error id="Error_refusal" name="Отказ модели" errorCode="ai_refusal" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="TestAiTask">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Classify_di" bpmnElement="Classify">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Triage_di" bpmnElement="Triage">
+        <dc:Bounds x="400" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="562" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_refused_di" bpmnElement="EndEvent_refused">
+        <dc:Bounds x="352" y="232" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="330" y="275" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Refused_di" bpmnElement="Refused">
+        <dc:Bounds x="272" y="142" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="210" y="185" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_di" bpmnElement="Flow_start">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_classified_di" bpmnElement="Flow_classified">
+        <di:waypoint x="340" y="120" />
+        <di:waypoint x="400" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_triaged_di" bpmnElement="Flow_triaged">
+        <di:waypoint x="500" y="120" />
+        <di:waypoint x="562" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_refused_di" bpmnElement="Flow_refused">
+        <di:waypoint x="290" y="178" />
+        <di:waypoint x="290" y="250" />
+        <di:waypoint x="352" y="250" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

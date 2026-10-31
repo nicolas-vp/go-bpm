@@ -19,26 +19,21 @@ type BusinessRuleTask struct {
 
 // CalledDecision - решение, которое вызывает задача бизнес-правила
 type CalledDecision struct {
-	DecisionId     string `xml:"decisionId,attr"`
-	ResultVariable string `xml:"resultVariable,attr"`
+	XMLName        xml.Name `xml:"calledDecision"`
+	DecisionId     string   `xml:"decisionId,attr"`
+	ResultVariable string   `xml:"resultVariable,attr"`
 }
 
-// GetCalledDecision возвращает zeebe:calledDecision задачи; пустой, если не задан
+func (d CalledDecision) xmlName() xml.Name { return d.XMLName }
+
+// GetCalledDecision возвращает gobpm:calledDecision задачи, без него - zeebe:calledDecision; пустой, если не задан
 func (task *BusinessRuleTask) GetCalledDecision() CalledDecision {
-	for _, e := range task.ExtensionElementList {
-		for _, d := range e.CalledDecisions {
-			return d
-		}
-	}
-	return CalledDecision{}
+	decision, _ := pickExtension(collectExtensions(task.ExtensionElementList, func(e ExtensionElements) []CalledDecision { return e.CalledDecisions }))
+	return decision
 }
 
-// HasTaskDefinition - задача реализована обработчиком (zeebe:taskDefinition), а не решением DMN
+// HasTaskDefinition - задача реализована обработчиком (gobpm:taskDefinition, zeebe:taskDefinition), а не решением DMN
 func (task *BusinessRuleTask) HasTaskDefinition() bool {
-	for _, e := range task.ExtensionElementList {
-		if len(e.TaskDefinitions) > 0 {
-			return true
-		}
-	}
-	return false
+	_, ok := pickExtension(collectExtensions(task.ExtensionElementList, func(e ExtensionElements) []TaskDefinition { return e.TaskDefinitions }))
+	return ok
 }

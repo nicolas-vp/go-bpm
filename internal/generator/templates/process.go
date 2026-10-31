@@ -84,6 +84,21 @@ func Deployment(svc *services.Services) map[string]bpm.DeploymentProcess {
 					{{- end }}
 				},
 				{{- end }}
+				{{- with $expr.AITask }}
+				AITask: &bpm.AITask{
+					{{- if .Model }}
+					Model:          {{ printf "%q" .Model }},
+					{{- end }}
+					{{- if .SystemPrompt }}
+					SystemPrompt:   {{ printf "%q" .SystemPrompt }},
+					{{- end }}
+					Prompt:         {{ printf "%q" .Prompt }},
+					ResultVariable: {{ printf "%q" .ResultVariable }},
+					{{- if .JSON }}
+					JSON:           true,
+					{{- end }}
+				},
+				{{- end }}
 				{{- with $expr.Loop }}
 				Loop: &bpm.Loop{
 					{{- if .Cardinality }}

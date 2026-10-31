@@ -28,4 +28,16 @@ type DataModel struct {
 	// LoopCounter - номер выполнения задачи в цикле multi-instance, с 1; после цикла переменной нет.
 	// omitempty: метод вне цикла не должен записать переменную нулём
 	LoopCounter int `json:"loopCounter,omitempty"`
+
+	// Request - текст обращения клиента в TestAiTask; Category - ответ AI task Classify,
+	// Triage - ответ AI task Triage: поле-структура, поэтому ответ модели разбирается как JSON
+	Request  string  `json:"request"`
+	Category string  `json:"category"`
+	Triage   *Triage `json:"triage"`
+}
+
+// Triage - срочность обращения, ответ AI task Triage в TestAiTask
+type Triage struct {
+	Urgent bool   `json:"urgent"`
+	Reason string `json:"reason"`
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -61,8 +62,14 @@ type Config struct {
 	// RulesHistory - история бизнес-правил (таблица bpm_rules_history), флаги отдельные от History
 	RulesHistory HistoryConfig
 	// Hooks - точки подключения: события элементов, обёртка вызовов кода сервиса, падения экземпляров
-	Hooks  Hooks
-	Logger *slog.Logger
+	Hooks Hooks
+	// AI - модель для AI task (service task с gobpm:aiTask). Без неё задачи AI task падают, как service task
+	// без обработчика. Реализация - в сервисе: вызов нужной модели (Claude, OpenAI, локальная)
+	AI AIClient
+	// AIAttemptTimeout - таймаут одной попытки AI task вместо AttemptTimeout: ответ модели бывает дольше
+	// обычного обработчика. По умолчанию 5m
+	AIAttemptTimeout time.Duration
+	Logger           *slog.Logger
 }
 
 type Engine struct {
@@ -79,7 +86,9 @@ type Engine struct {
 	// historyOut - куда выводится история на экран
 	historyOut io.Writer
 	hooks      Hooks
-	log        *slog.Logger
+	// ai - модель AI task, nil - AI task в процессах нет
+	ai  AIClient
+	log *slog.Logger
 }
 
 // New регистрирует в очереди системный вид задач и виды service task, поэтому вызывается до queue.Start.
@@ -110,7 +119,13 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 		rulesHistory: config.RulesHistory,
 		historyOut:   os.Stdout,
 		hooks:        config.Hooks,
+		ai:           config.AI,
 		log:          config.Logger,
+	}
+	aiTypes := aiTaskTypes(deployment)
+	if len(aiTypes) > 0 && config.AI == nil {
+		s.log.Warn("processes have AI tasks but engine.Config.AI is not set, their tasks will fail",
+			"task_types", slices.Sorted(maps.Keys(aiTypes)))
 	}
 
 	q.Register(s.systemKind, s.handleSystemTask, queue.KindOptions{
@@ -123,12 +138,17 @@ func New(q Queue, config Config, processes map[string]bpm.Process, queues []bpm.
 	for _, taskQueue := range queues {
 		kind := config.KindPrefix + ".task." + taskQueue.TypeID
 		s.taskKinds[taskQueue.TypeID] = kind
-		if taskQueue.Handler == nil {
+		handler, attemptTimeout := taskQueue.Handler, config.AttemptTimeout
+		if handler == nil && aiTypes[taskQueue.TypeID] {
+			// AI task: обработчика jobType нет, задачу выполняет движок
+			handler, attemptTimeout = s.aiHandler, config.AIAttemptTimeout
+		}
+		if handler == nil {
 			s.log.Warn("no handler for task type, its tasks will fail", "task_type", taskQueue.TypeID)
 		}
-		q.Register(kind, s.serviceTaskHandler(taskQueue.TypeID, taskQueue.Handler), queue.KindOptions{
+		q.Register(kind, s.serviceTaskHandler(taskQueue.TypeID, handler), queue.KindOptions{
 			MaxAttempts:    max(taskQueue.Retries, 1),
-			AttemptTimeout: config.AttemptTimeout,
+			AttemptTimeout: attemptTimeout,
 			RetryDelay:     config.RetryDelay,
 			Workers:        config.TaskWorkers,
 			OnFailed:       s.serviceTaskFailed,
@@ -149,6 +169,9 @@ func withDefaults(config Config) Config {
 	}
 	if config.AttemptTimeout <= 0 {
 		config.AttemptTimeout = 30 * time.Second
+	}
+	if config.AIAttemptTimeout <= 0 {
+		config.AIAttemptTimeout = 5 * time.Minute
 	}
 	if config.RetryDelay <= 0 {
 		config.RetryDelay = time.Second

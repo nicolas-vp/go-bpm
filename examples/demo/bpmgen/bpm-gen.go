@@ -5,6 +5,7 @@ package bpmgen
 import (
 	"github.com/nicolas-vp/go-bpm/bpm"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
+	test_ai_task "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_ai_task"
 	test_bpm_process "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_bpm_process"
 	test_decision "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_decision"
 	test_message "github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/test_message"
@@ -18,6 +19,7 @@ import (
 // Processes - все сгенерированные процессы по id процесса; методы task получают сервисы svc
 func Processes(svc *services.Services) map[string]bpm.Process {
 	return map[string]bpm.Process{
+		"TestAiTask":            {Flows: test_ai_task.Deployment(svc), BPMN: bpmn_files.BPMN["testAiTask.bpmn"]},
 		"TestBpmProcess":        {Flows: test_bpm_process.Deployment(svc), BPMN: bpmn_files.BPMN["test-bpm-engine.bpmn"]},
 		"TestDecision":          {Flows: test_decision.Deployment(svc), BPMN: bpmn_files.BPMN["testBusinessRule.bpmn"]},
 		"TestMessage":           {Flows: test_message.Deployment(svc), BPMN: bpmn_files.BPMN["testMessage.bpmn"]},

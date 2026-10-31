@@ -5,9 +5,24 @@
 
 ## Чем рисовать
 
-[Camunda Modeler](https://camunda.com/download/modeler/) (desktop) или [demo.bpmn.io](https://demo.bpmn.io/) (без
-расширений Camunda). При создании файла выбирайте **Camunda 8** — go-bpm читает атрибуты `zeebe:*`: тип service task,
-скрипты, решения, вызовы процессов. У user task дополнительно понимаются атрибуты Camunda 7 (`camunda:*`).
+- [go-bpm modeler](https://go-bpm.tech/modeler/) ([исходники](https://github.com/nicolas-vp/go-bpm-modeler)) —
+  редактор под go-bpm: в палитре только то, что поддерживает генератор, линтер с его же проверками, AI task.
+  Пишет расширения `gobpm:*`.
+- [Camunda Modeler](https://camunda.com/download/modeler/) (desktop) или [demo.bpmn.io](https://demo.bpmn.io/) (без
+  расширений Camunda). При создании файла выбирайте **Camunda 8** — расширения `zeebe:*`. У user task дополнительно
+  понимаются атрибуты Camunda 7 (`camunda:*`).
+
+**Расширения `gobpm:*` и `zeebe:*`** (тип service task, скрипты, решения, вызовы процессов, назначение задач, ключ
+корреляции) называются одинаково: `gobpm:taskDefinition type`, `zeebe:taskDefinition type` и т. д., примеры ниже
+даны в `zeebe:*`. Пространства имён:
+
+```xml
+xmlns:gobpm="https://github.com/nicolas-vp/go-bpm/schema/1.0"
+xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+```
+
+Если у элемента есть оба варианта, берётся `gobpm:*`. Расширения других пространств имён с теми же именами
+(`<my:taskDefinition>`) генератор не читает.
 
 Файлы кладутся в `process/` (подпапки допустимы): `*.bpmn` — процессы, `*.dmn` — решения. Другие файлы генератор
 не читает.
@@ -41,13 +56,14 @@
 | Task | ✓ | ваш Go-метод, синхронно |
 | Script task (`zeebe:script`) | ✓ | сгенерированный Go-код, синхронно |
 | Service task (`zeebe:taskDefinition`) | ✓ | ваш обработчик, асинхронно через очередь, с повторами |
+| AI task (`gobpm:aiTask`) | ✓ | запрос к модели (ваша реализация `engine.AIClient`), асинхронно через очередь, с повторами |
 | Business rule task (`zeebe:calledDecision`) | ✓ | сгенерированное решение DMN, синхронно |
 | User task | ✓ | ждёт человека, API задач |
 | Receive task (`messageRef`) | ✓ | ждёт сообщение, `POST /api/v1/messages` |
 | Intermediate timer catch event | ✓ | ждёт `timeDuration` или до `timeDate` |
 | Intermediate message catch event | ✓ | ждёт сообщение, как receive task |
 | Boundary timer event (прерывающий) | ✓ | у task, scriptTask, serviceTask, userTask |
-| Boundary error event (прерывающий) | ✓ | у task, scriptTask, serviceTask |
+| Boundary error event (прерывающий) | ✓ | у task, scriptTask, serviceTask (и AI task) |
 | Embedded sub-process | ✓ | отдельный дочерний экземпляр |
 | Call activity (`zeebe:calledElement`) | ✓ | экземпляр другого процесса |
 | Последовательный multi-instance | ✓ | у задач, подпроцесса и call activity: `loopCardinality` и/или `completionCondition` |
@@ -230,6 +246,60 @@ func NotifyClient(ctx context.Context, svc *services.Services, job bpm.Job, data
   попытки кончились — граничное событие ошибки без кода или `failed`. Подробнее —
   [граничное событие ошибки](#граничное-событие-ошибки).
 - Сколько задач одного jobType выполняется одновременно — `TaskWorkers` (по умолчанию 1) на каждый экземпляр сервиса.
+
+## AI task — запрос к модели
+
+Service task с расширением `gobpm:aiTask` (в go-bpm modeler — элемент «AI task» в палитре): движок отправляет
+промпт модели и пишет ответ в переменную. Обработчик писать не нужно.
+
+```xml
+<bpmn:serviceTask id="Classify" name="Определить категорию">
+  <bpmn:extensionElements>
+    <gobpm:taskDefinition type="ai" retries="3" />
+    <gobpm:aiTask model="claude-sonnet-5-5" resultVariable="category"
+                  systemPrompt="Ты классифицируешь обращения клиентов. Ответь одним словом: billing, login или other."
+                  prompt="Обращение: ${request.text}" />
+  </bpmn:extensionElements>
+</bpmn:serviceTask>
+```
+
+| Атрибут `gobpm:aiTask` | Что это | Обяз. |
+|---|---|---|
+| `prompt` | промпт: `=переменная` или текст с `${переменная}` внутри | ✓ |
+| `systemPrompt` | системный промпт, как `prompt` | |
+| `resultVariable` | куда записать ответ, путь через точку | ✓ |
+| `model` | модель, движок передаёт её реализации `AIClient`; пусто — модель реализации по умолчанию | |
+
+- **Переменные в промпте** — поля `DataModel`, как в выражениях. Строка подставляется как есть, остальное
+  (число, структура, список) — JSON. Переменной нет в момент выполнения — ошибка задачи.
+- **Ответ.** Поле `resultVariable` строковое (`string`, `*string`, `any`) — в него пишется текст ответа. Поле другого
+  типа (структура, список, число, bool) — модель просят ответить JSON, движок разбирает его и пишет значение
+  в поле. Блок ```` ```json ```` вокруг ответа допускается, не JSON — ошибка задачи и повтор.
+- **jobType и Retries** — из `gobpm:taskDefinition` (моделер пишет `type="ai"`), без него — `ai`. jobType AI task не
+  может совпадать с jobType обычной service task. Задачи ставятся в очередь `bpm.task.ai`, как у service task:
+  повторы, граничные таймер и ошибка, `TaskWorkers`, хуки `WrapCall` работают так же. Таймаут попытки —
+  `Config.AIAttemptTimeout` (по умолчанию 5 минут) вместо `AttemptTimeout`: ответ модели бывает долгим.
+- **Модель** — `engine.Config.AI`, интерфейс `engine.AIClient`. go-bpm не вызывает модели сам и не тянет SDK
+  провайдеров: реализацию пишет сервис — Claude, OpenAI, локальная модель, кэш:
+
+  ```go
+  // AIClient - модель, которой движок отправляет запросы AI task
+  type AIClient interface {
+      Complete(ctx context.Context, request engine.AIRequest) (string, error)
+  }
+
+  // AIRequest: Model (из BPMN, может быть пустым), SystemPrompt и Prompt с подставленными переменными,
+  // JSON - ответ нужен JSON-ом, Job - экземпляр, элемент, попытка
+  eng, err := engine.New(q, engine.Config{AI: myModel}, bpmgen.Processes(svc), bpmgen.Queues(svc))
+  ```
+
+  Функция подходит через `engine.AIClientFunc`. Пустой `Model` — модель реализации по умолчанию. Если
+  `request.JSON`, попросите модель ответить только JSON (или используйте structured outputs провайдера).
+  Без `Config.AI` движок запускается с предупреждением, а задачи AI task падают, как service task без обработчика.
+- **Ошибки реализации** — как у обработчика service task: обычная — повтор до `Retries`, `bpm.NewError(code, ...)` —
+  граничное событие ошибки с этим кодом или без кода. Например, отказ модели можно вернуть как
+  `bpm.NewError("ai_refusal", ...)` и обработать в схеме событием `<bpmn:error errorCode="ai_refusal" />`.
+- Ответ попадает в историю вместе с переменными задачи. Демо — `examples/demo/process/testAiTask.bpmn`, модель — заглушка `examples/demo/aistub`.
 
 ## Business rule task — решение DMN
 
@@ -495,7 +565,9 @@ Receive task или промежуточное событие сообщения
 - сообщение без имени, с выражением в имени или с `correlationKey` сложнее переменной;
 - `errorRef` на несуществующую ошибку;
 - выражения назначения user task сложнее переменной;
-- business rule task с job worker (`zeebe:taskDefinition`) или без `decisionId`/`resultVariable`.
+- business rule task с job worker (`zeebe:taskDefinition`) или без `decisionId`/`resultVariable`;
+- service task без `type` в `taskDefinition`; AI task без `prompt` или `resultVariable`, с FEEL-выражением в промпте
+  сложнее `=переменная`, с jobType обычной service task.
 
 **Игнорируются без ошибки** (расширения внутри `extensionElements`): `zeebe:ioMapping` (входы и выходы задач),
 `zeebe:taskHeaders`, execution listeners. Документация, лейны, текстовые аннотации и объекты данных не исполняются и

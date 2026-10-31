@@ -16,12 +16,8 @@ type ScriptTask struct {
 	Other []Element `xml:",any"`
 }
 
-// GetScript возвращает zeebe:script задачи; пустой, если скрипт не задан
+// GetScript возвращает gobpm:script задачи, без него - zeebe:script; пустой, если скрипт не задан
 func (task *ScriptTask) GetScript() Script {
-	for _, e := range task.ExtensionElementList {
-		for _, s := range e.Scripts {
-			return s
-		}
-	}
-	return Script{}
+	script, _ := pickExtension(collectExtensions(task.ExtensionElementList, func(e ExtensionElements) []Script { return e.Scripts }))
+	return script
 }

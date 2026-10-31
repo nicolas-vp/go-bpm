@@ -14,6 +14,7 @@ import (
 
 	"github.com/nicolas-vp/go-bpm/bpm"
 	"github.com/nicolas-vp/go-bpm/engine"
+	"github.com/nicolas-vp/go-bpm/examples/demo/aistub"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen"
 	"github.com/nicolas-vp/go-bpm/examples/demo/bpmgen/services"
 	"github.com/nicolas-vp/go-bpm/internal/pgtest"
@@ -35,7 +36,9 @@ func TestEndToEnd(t *testing.T) {
 		RetryDelay:   100 * time.Millisecond,
 		History:      engine.HistoryConfig{ToDB: on},
 		RulesHistory: engine.HistoryConfig{ToDB: on},
-		Logger:       log,
+		// TestAiTask: категория текстом, срочность - JSON в структуру
+		AI:     aistub.Client{Text: "billing", JSON: `{"urgent": true, "reason": "двойное списание"}`},
+		Logger: log,
 	}, processes, bpmgen.Queues(svc))
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +49,7 @@ func TestEndToEnd(t *testing.T) {
 	variables := map[string]map[string]any{
 		"TestBpmProcess": {"amount": 55},
 		"TestDecision":   {"a": "some", "b": "x"},
+		"TestAiTask":     {"request": "Списали деньги дважды"},
 	}
 	instances := make(map[string]uuid.UUID)
 	for name := range processes {

@@ -1,7 +1,7 @@
 # Контекст проекта go-bpm
 
 Сводка решений и договорённостей по BPM-движку на PostgreSQL и генератору кода из BPMN.
-Актуально на 2026-10-30. История до переезда — проект pg-bpm (три отдельных модуля), см. «Откуда пришли».
+Актуально на 2026-10-31. История до переезда — проект pg-bpm (три отдельных модуля), см. «Откуда пришли».
 
 ## Один модуль
 
@@ -94,6 +94,20 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - **Обработчики пишутся руками.** Генератор только создаёт недостающие заглушки; обработчики jobType, которого больше нет в BPMN, не удаляются.
 - Миграция со старых раскладок pg-bpm-gen (`conditions/`, `methods/`, `handler_<jobType>.go`, `deployment-gen.go`) удалена вместе с `legacy.go`: в новом продукте таких проектов нет.
 
+### Расширения `gobpm:*` и `zeebe:*`
+
+Моделер go-bpm ([go-bpm-modeler](https://github.com/nicolas-vp/go-bpm-modeler)) пишет расширения в своём пространстве имён `https://github.com/nicolas-vp/go-bpm/schema/1.0` (`gobpm:`) с теми же локальными именами, что у Zeebe. `encoding/xml` сопоставляет теги по локальному имени из любого пространства, поэтому у каждого расширения (`TaskDefinition`, `Script`, `CalledDecision`, `CalledElement`, `AssignmentDefinition`, `FormDefinition`, `Subscription`) есть `XMLName`, а геттеры выбирают через `pickExtension` (`models/bpmn/namespace.go`): `gobpm` важнее `zeebe` независимо от порядка в файле, другие пространства игнорируются. Префикс без объявления `xmlns` (`Space` = `gobpm`/`zeebe`) тоже читается — так написаны фрагменты в тестах. `gobpm:aiTask` — только в пространстве go-bpm. `GetType` service task больше не паникует: пустой jobType — ошибка генерации.
+
+### AI task
+
+`serviceTask` с `gobpm:aiTask` (`model`, `systemPrompt`, `prompt`, `resultVariable`); формат — как у моделера, там же `gobpm:taskDefinition type="ai"`, чтобы старый go-bpm исполнял её как обычную service task.
+
+- **Генератор** (`codegen/ai_tasks.go`): `prompt` и `systemPrompt` — `=path` → `"${path}"`, текст остаётся как есть с `${path}` внутри (FEEL сложнее переменной — ошибка); обязательны `prompt` и `resultVariable`. jobType — из `taskDefinition`, без него `ai`. `checkAiTasks` сверяет переменные промптов и `resultVariable` с `DataModel` (недостающие — в `modelGaps`) и ставит `AITask.JSON`, если поле результата не строка/`*string`/`any` (и путь не уходит внутрь map). `mergeQueues`: jobType у AI task и обычной service task — ошибка; у AI-очереди `HandlerFunc` пуст, заглушки `handlers/` нет, `queue-gen.go` пишет её без `Handler` (импорт `handlers` — только если есть обработчики).
+- **Почему через очередь service task, а не новый ActivateType.** AI task получает всё готовое: асинхронность (вызов модели долгий, не занимает `SystemWorkers`), повторы `Retries`, граничные таймер и ошибка, `WrapCall`, история `activated`/`completed`, метрики. Контракт меняется только полем `Expression.AITask`.
+- **Движок** (`engine/ai.go`): `Config.AI AIClient` (`Complete(ctx, AIRequest) (string, error)`, `AIClientFunc`). `engine.New` для очереди без `Handler`, чей jobType есть у AI task (`aiTaskTypes`), регистрирует `aiHandler`: элемент по `job.ProcessName`/`job.ElementId`, `renderPrompt` (`${path}` → строка или JSON, нет переменной — ошибка), `Complete`, при `JSON` — `parseJSONAnswer` (допускается обёртка ```` ```json ````), `setVariable` по пути с созданием вложенных объектов. Таймаут попытки AI-очереди — `Config.AIAttemptTimeout` (5m): `AttemptTimeout` 30s мал для модели с размышлением. Без `Config.AI` — предупреждение при старте и ошибка задачи, как у jobType без обработчика (строгая ошибка `New` ломала бы сервисы и тесты, которым AI task не нужна).
+- **Реализация модели — в сервисе.** go-bpm даёт только интерфейс `AIClient`: SDK провайдеров тянули бы в модуль десятки зависимостей (адаптер на `anthropic-sdk-go` пробовали и убрали). Пустой `AIRequest.Model` — модель реализации по умолчанию; при `AIRequest.JSON` реализация просит ответ JSON-ом. Ошибки — как у обработчика: обычная — повтор, `bpm.Error` — граничное событие (например, отказ модели кодом `ai_refusal`).
+- **Демо:** `testAiTask.bpmn` (`TestAiTask`): `Classify` → `category` текстом, `Triage` → `triage *Triage` JSON-ом, граничное событие `ai_refusal` — пример обработки отказа. Модель — заглушка `examples/demo/aistub` (`Client{Text, JSON}`), она же в `TestEndToEnd`.
+
 ### Проверка процесса (`codegen/validate.go`)
 
 `prepareProcess` в начале `ParseFromProcess`: всё, что раньше генерировалось молча и роняло экземпляр в рантайме, когда до этого доходил токен, — ошибка генерации.
@@ -112,6 +126,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 | Элемент BPMN | ActivateType | Что генерируется |
 |---|---|---|
 | `serviceTask` (zeebe:taskDefinition type) | `Queue` | запись в корневом `queue-gen.go` со ссылкой `Handler`; заглушка `handlers/<jobType>.go`, пишется руками |
+| `serviceTask` с `gobpm:aiTask` (AI task) | `Queue` | `Expression.AITask` (`bpm.AITask`); в `queue-gen.go` очередь jobType (по умолчанию `ai`) без `Handler`, заглушки нет — выполняет движок, см. «AI task» |
 | `task` (обычная задача) | `Method` | заглушка `method_<id>.go`, пишется руками |
 | `scriptTask` (zeebe:script) | `Method` | `method_<id>.go` с кодом скрипта на модели данных; при `resultVariable` результат пишется в поле модели |
 | exclusive gateway с условиями | `CompleteType = Script` | `cond_<id>.go`: if-ветки по порядку, затем default flow |
@@ -178,6 +193,7 @@ internal/bpmgen/                (в демо - examples/demo/bpmgen/)
 - `Expression`, `DeploymentProcess`, `Process{Flows, BPMN}`, `Queue{TypeID, Retries, Handler}`;
 - `ConditionFunc func(map[string]any) (string, error)`, `MethodFunc func(ctx, map[string]any) (map[string]any, error)`, `HandlerFunc func(ctx, bpm.Job, map[string]any) (map[string]any, error)` — переменные процесса map'ой. `Job`: `InstanceUid`, `ProcessName`, `BusinessKey`, `ElementId`, `JobType`, `Headers`, `LastAttempt`.
 - Адаптеры на модели данных `T` (`data.go`): `Condition[T](func(*T) string)`, `Method[S, T](svc S, func(ctx, S, *T) error)`, `Handler[S, T](svc S, func(ctx, S, Job, *T) error)`. Сервисы `S` замыкаются при старте. Переменные → `T` через JSON (поле по тегу `json`), после метода поля `T` пишутся поверх переменных; переменные, которых нет в `T` (например, `errorCode`), сохраняются. Ошибка перевода (строка в поле `int`) — ошибка метода или условия, движок повторяет шаг.
+- `Expression.AITask *AITask{Model, SystemPrompt, Prompt, ResultVariable, JSON}` — у `ActivateTypeQueue`: AI task, `Queue` её jobType без `Handler`.
 - `ActivateTypeUserTask`, `Expression.UserTask *UserTask{Name, Assignee, CandidateUsers, CandidateGroups, FormKey}`; значение `${path}` — переменная процесса, остальные — литералы.
 - `Deref[T](*T) T` — значение по указателю или нулевое; им решение DMN читает вход-указатель, у которого проверяется `null`.
 - **Совместимость.** Шаблоны генератора и контракт в одном модуле, поэтому меняются в одном коммите. Но сгенерированный код живёт в сервисах-потребителях: несовместимое изменение типов `bpm` ломает их до перегенерации — после v1 это `/v2`.
@@ -368,4 +384,5 @@ pg-bpm — три отдельных модуля: `pg-bpm-lib` (→ `bpm`), `pb
 - Сообщения, не сделано: старт процесса по сообщению, граничное событие сообщения (прерывание задачи), event-based gateway, выражения в имени сообщения и ключе корреляции.
 - DMN, не сделано: зависимые решения (`requiredDecision`), literal expression, `PRIORITY`/`OUTPUT ORDER`, FEEL-функции, проверка пересечений у `UNIQUE`. В истории правил нет значений входов таблицы. Окно правил не открывается ссылкой (`?element=` открывает только панель).
 - Реализовать рукописные методы `test_bpm_process` и обработчик `handlers/do_some_async.go` в демо (сейчас заглушки с TODO).
+- AI task, не сделано: structured outputs (JSON-схема из типа поля модели вместо просьбы в промпте), FEEL в промпте, вложения (файлы, изображения), запись запроса и ответа модели отдельно от переменных, готовые реализации `AIClient` намеренно не поставляются.
 - Мелочь: имена файлов из id элементов не проверяются на суффиксы `_test`, `_linux`, `_amd64` и т.п. Go трактует такие файлы особо.

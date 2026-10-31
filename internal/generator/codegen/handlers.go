@@ -41,6 +41,9 @@ func prepareHandlerFiles(queues []model.Queue, outputPath string, imports dataIm
 
 	owners := make(map[string]string)
 	for _, queue := range queues {
+		if queue.AI {
+			continue
+		}
 		if other, ok := owners[queue.HandlerFunc]; ok {
 			return fmt.Errorf("jobType %q и %q дают одно имя обработчика %s, переименуйте один из них", other, queue.TypeID, queue.HandlerFunc)
 		}

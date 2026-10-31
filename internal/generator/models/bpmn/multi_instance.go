@@ -6,7 +6,7 @@ type MultiInstance struct {
 	IsSequential        bool   `xml:"isSequential,attr"`
 	LoopCardinality     string `xml:"loopCardinality"`
 	CompletionCondition string `xml:"completionCondition"`
-	// LoopCharacteristics - zeebe:loopCharacteristics: цикл по коллекции, не поддерживается
+	// LoopCharacteristics - zeebe:loopCharacteristics (gobpm:loopCharacteristics): цикл по коллекции, не поддерживается
 	LoopCharacteristics []LoopCharacteristics `xml:"extensionElements>loopCharacteristics"`
 	// Collection - camunda:collection, цикл по коллекции Camunda 7, не поддерживается
 	Collection string `xml:"collection,attr"`

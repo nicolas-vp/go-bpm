@@ -109,6 +109,7 @@ func GenerateQueue(definitions []bpmn.Definitions, decisions map[string]Decision
 			if err := prepareLoopFiles(processes, process.Id, processPath, pkg, imports, dataModel, gaps); err != nil {
 				return fmt.Errorf("process %s: %w", process.Id, err)
 			}
+			checkAiTasks(processes, process.Id, dataModel, gaps)
 			if err := prepareMethodFiles(&process, processPath, pkg, imports, dataModel, gaps); err != nil {
 				return err
 			}
@@ -131,7 +132,10 @@ func GenerateQueue(definitions []bpmn.Definitions, decisions map[string]Decision
 		return err
 	}
 
-	queues := mergeQueues(allQueues)
+	queues, err := mergeQueues(allQueues)
+	if err != nil {
+		return err
+	}
 	// Пакеты удалённых из BPMN процессов иначе остались бы в выводе
 	if err := removeStaleProcessDirs(outputPath, processDirs); err != nil {
 		return err
@@ -177,14 +181,20 @@ func (f deploymentFile) HasTimers() bool {
 var reservedNames = map[string]bool{"Deployment": true, "svc": true, "services": true, "model": true}
 
 // mergeQueues объединяет service task всех процессов по jobType с максимальным Retries,
-// проставляет имя обработчика и сортирует по jobType
-func mergeQueues(queues []model.Queue) []model.Queue {
+// проставляет имя обработчика (у AI task его нет) и сортирует по jobType.
+// jobType AI task и обычной service task не совпадают: задачи вида выполняет либо движок, либо обработчик
+func mergeQueues(queues []model.Queue) ([]model.Queue, error) {
 	byType := make(map[string]model.Queue)
 	for _, queue := range queues {
 		if existing, ok := byType[queue.TypeID]; ok {
+			if existing.AI != queue.AI {
+				return nil, fmt.Errorf("jobType %q - и у AI task, и у service task с обработчиком, задайте AI task другой type", queue.TypeID)
+			}
 			queue.Retries = max(queue.Retries, existing.Retries)
 		}
-		queue.HandlerFunc = utils.ToPascalCase(queue.TypeID)
+		if !queue.AI {
+			queue.HandlerFunc = utils.ToPascalCase(queue.TypeID)
+		}
 		byType[queue.TypeID] = queue
 	}
 	result := make([]model.Queue, 0, len(byType))
@@ -192,7 +202,7 @@ func mergeQueues(queues []model.Queue) []model.Queue {
 		result = append(result, queue)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].TypeID < result[j].TypeID })
-	return result
+	return result, nil
 }
 
 // checkFuncNames проверяет, что функции условий, условий завершения циклов, методов и решений (decisions: имя - решение) не совпадают
@@ -275,6 +285,16 @@ type queuesFile struct {
 	Package        string
 	HandlersImport string
 	Queues         []model.Queue
+}
+
+// HasHandlers - есть очереди с обработчиками из handlers/ (не только AI task): тогда импортируется handlers
+func (f queuesFile) HasHandlers() bool {
+	for _, queue := range f.Queues {
+		if queue.HandlerFunc != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // prepareQueuesFile генерирует outputPath/queue-gen.go: очереди всех процессов со ссылками на обработчики

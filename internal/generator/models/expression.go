@@ -33,6 +33,8 @@ type Expression struct {
 	Loop *Loop
 	// Message - сообщение, которое ждёт receive task или промежуточное событие
 	Message *bpm.Message
+	// AITask - запрос AI task к модели; JSON проставляет сверка с моделью данных (checkAiTasks)
+	AITask *bpm.AITask
 }
 
 // Loop - последовательный multi-instance: число выполнений и условие завершения

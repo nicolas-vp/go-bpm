@@ -51,6 +51,23 @@ type Expression struct {
 	Loop *Loop
 	// Message - для ActivateTypeMessage: какое сообщение ждёт элемент
 	Message *Message
+	// AITask - для ActivateTypeQueue: service task - AI task (gobpm:aiTask). Обработчика jobType у неё нет,
+	// её выполняет движок запросом к модели через engine.Config.AI
+	AITask *AITask
+}
+
+// AITask - запрос AI task к модели. В SystemPrompt и Prompt "${path}" - значение переменной процесса
+// (путь через точку): строка как есть, остальное - JSON. Остальной текст - как есть
+type AITask struct {
+	// Model - модель (gobpm:aiTask model), пусто - модель клиента по умолчанию
+	Model        string
+	SystemPrompt string
+	Prompt       string
+	// ResultVariable - переменная, в которую пишется ответ модели, путь через точку
+	ResultVariable string
+	// JSON - поле ResultVariable в модели данных не строка (структура, список, число): ответ модели -
+	// JSON, движок разбирает его и пишет в переменную значение
+	JSON bool
 }
 
 // Message - подписка элемента на сообщение: токен ждёт сообщение с именем Name и ключом корреляции
