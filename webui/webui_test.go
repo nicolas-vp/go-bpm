@@ -17,6 +17,7 @@ func TestRegister(t *testing.T) {
 		{path: "/ui", wantStatus: http.StatusMovedPermanently},
 		{path: "/ui/", wantStatus: http.StatusOK, wantBody: "/ui/static/app.js"},
 		{path: "/ui/static/app.js", wantStatus: http.StatusOK, wantBody: "/api/v1"},
+		{path: "/ui/static/ai-task.js", wantStatus: http.StatusOK, wantBody: "gobpm"},
 		{path: "/ui/static/style.css", wantStatus: http.StatusOK},
 		{path: "/ui/static/missing.js", wantStatus: http.StatusNotFound},
 	} {

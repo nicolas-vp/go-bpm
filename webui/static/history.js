@@ -14,7 +14,7 @@
   var panelType = document.getElementById('panel-type');
   var panelBody = document.getElementById('panel-body');
 
-  var viewer = new BpmnJS({ container: '#canvas' });
+  var viewer = new BpmnJS({ container: '#canvas', additionalModules: [goBpmAiTask.module] });
 
   var failuresBox = document.getElementById('failures');
   var actionsBox = document.getElementById('instance-actions');
@@ -226,7 +226,7 @@
   function renderPanel(element) {
     var bo = element.businessObject || {};
     panelTitle.textContent = bo.name || element.id;
-    panelType.textContent = (element.type || '').replace('bpmn:', '') + (bo.name ? ' · ' + element.id : '');
+    panelType.textContent = (goBpmAiTask.isAiTask(element) ? 'AI task' : (element.type || '').replace('bpmn:', '')) + (bo.name ? ' · ' + element.id : '');
 
     var nodes = [];
     var instances = subInstances(element.id);

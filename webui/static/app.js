@@ -215,7 +215,7 @@
       return;
     }
     if (!viewer) {
-      viewer = new BpmnJS({ container: '#diagram' });
+      viewer = new BpmnJS({ container: '#diagram', additionalModules: [goBpmAiTask.module] });
     }
     await importProcess(viewer, data.bpmn, process.id);
     diagramBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -978,7 +978,7 @@
       }
       // bpmn-js создаётся, когда контейнер видим
       if (!heatmapViewer) {
-        heatmapViewer = new BpmnJS({ container: '#heatmap-diagram' });
+        heatmapViewer = new BpmnJS({ container: '#heatmap-diagram', additionalModules: [goBpmAiTask.module] });
       }
       heatmap.drawn = '';
       await importProcess(heatmapViewer, results[0].bpmn, processId);
