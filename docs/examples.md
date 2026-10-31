@@ -1,6 +1,6 @@
 # Разбор примеров
 
-В `examples/demo` — демо-сервис с семью процессами. Каждый показывает свою часть go-bpm. Для каждого ниже: схема,
+В `examples/demo` — демо-сервис с восемью процессами. Каждый показывает свою часть go-bpm. Для каждого ниже: схема,
 как он устроен в BPMN, что сгенерировано, как запустить и что увидеть.
 
 Запуск демо — [Быстрый старт](quickstart.md#демо-за-пять-минут). Команды ниже предполагают сервис на `:8080`.
@@ -14,16 +14,18 @@
 | [`TestTimerAndException`](#testtimerandexception-таймеры-и-ошибки) | `testTimerAndException.bpmn` | таймер, граничные таймеры и ошибки |
 | [`TestMultiInstance`](#testmultiinstance-последовательный-multi-instance) | `testMultiInstance.bpmn` | последовательный multi-instance: число выполнений и условие завершения |
 | [`TestMessage`](#testmessage-ожидание-сообщения) | `testMessage.bpmn` | receive task ждёт сообщение по бизнес-ключу |
+| [`TestAiTask`](#testaitask-ai-task) | `testAiTask.bpmn` | AI task: ответ модели текстом и JSON-ом, граничное событие отказа модели |
 
 Общие файлы демо:
 
 - `bpmgen/model/data_model.go` — модель: `Amount int` (шлюз `TestBpmProcess`), `A`, `B`, `C`, `D string` (решения
   `TestDecision`), `Approved bool` (шлюз `TestUserTask`, условие цикла `TestMultiInstance`), `Notifications`,
-  `LoopCounter int` (`TestMultiInstance`);
+  `LoopCounter int` (`TestMultiInstance`), `Request`, `Category string` и `Triage *Triage` (`TestAiTask`);
 - `bpmgen/services/services.go` — пустой `Services`: внешних зависимостей у демо нет;
 - `bpmgen/handlers/` — обработчики `doSomeAsync`, `failingTask`, `slowTask`, `paralel1`…`paralel4` — заглушки,
   которые сразу возвращают `nil`;
-- `cmd/demo/main.go` — сервис: миграции, движок, API, консоль, флаги истории.
+- `aistub/` — заглушка модели для AI task (`engine.AIClient`), без запросов наружу;
+- `cmd/demo/main.go` — сервис: миграции, движок с моделью `aistub.Client{}`, API, консоль, флаги истории.
 
 ---
 
@@ -481,6 +483,37 @@ curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correl
 curl -XPOST localhost:8080/api/v1/messages -d '{"name":"paymentReceived","correlationKey":"order-2","ttl":"10m"}'
 # {"correlated":0} - сообщение ждёт: экземпляр с бизнес-ключом order-2, запущенный в ближайшие 10 минут, сразу пройдёт ожидание
 ```
+
+---
+
+## TestAiTask: AI task
+
+![TestAiTask: AI task «Определить категорию» с граничным событием «Отказ модели» и AI task «Оценить срочность»](images/demo-ai-task.svg)
+
+Start → «Определить категорию» (AI task) → «Оценить срочность» (AI task) → End. На «Определить категорию» висит
+граничное событие ошибки `ai_refusal` → «Модель отказалась». Обе задачи — service task с `gobpm:aiTask`
+и `gobpm:taskDefinition type="ai"` (так их рисует [go-bpm modeler](https://go-bpm.tech/modeler/)), обработчиков нет:
+задачи выполняет движок, модель — `engine.Config.AI`.
+
+- **«Определить категорию»** — промпт `Обращение: ${request}` с системным промптом «ответь одним словом: billing,
+  login или other». `resultVariable` — `category`, поле `Category string`, поэтому в него пишется текст ответа.
+- **«Оценить срочность»** — промпт `=request`, `resultVariable` — `triage`. Поле `Triage *Triage`
+  (`Urgent bool`, `Reason string`) — не строка, поэтому генератор ставит `JSON: true`: модель просят ответить JSON,
+  движок разбирает ответ в структуру.
+- **Сгенерировано:** `bpmgen/test_ai_task/flow-gen.go` — элементы с `AITask` (промпты, переменная результата,
+  `JSON`); в `queue-gen.go` — очередь `ai` с `Retries: 3` и без `Handler`, заглушки в `handlers/` нет.
+- **Модель** в демо — `aistub.Client{}`: на текст отвечает `other`, на JSON —
+  `{"urgent": false, "reason": "ответ заглушки: модель не подключена"}`. В своём сервисе реализуйте
+  `engine.AIClient` вызовом нужной модели, отказ верните как `bpm.NewError("ai_refusal", ...)` — экземпляр уйдёт
+  в «Модель отказалась».
+
+```sh
+curl -XPOST localhost:8080/api/v1/processes/TestAiTask/instances -d '{"variables":{"request":"Списали деньги дважды"}}'
+# экземпляр завершён: category = "other", triage = {"urgent": false, "reason": "ответ заглушки: ..."}
+```
+
+В истории обе задачи — `activated` и `completed` с переменными после ответа модели. Подробности —
+[AI task](bpmn.md#ai-task--запрос-к-модели).
 
 ---
 
